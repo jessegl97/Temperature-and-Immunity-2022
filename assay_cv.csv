@@ -1,0 +1,25 @@
+﻿inf_temp,phago.cv,peak_fever_score.cv,peak_eye_score.cv,mass_change.cv
+Sham_TN,71.03847,2.103555,0,117.0736
+MG_TN,46.5455,5.659331,108.0057,179.981
+Sham_ST,71.00122,2.538862,0,134.4764
+MG_ST,69.69435,7.155337,191.5598,214.8345
+,,,,
+,,,,
+,,,,
+inf_temp,Warm Control,Warm Infected,Cold Control,Cold Infected
+Peak Fever,2.528346,5.850859,1.898314,5.949263
+Phagocytosis,71.03847,46.5455,71.00122,69.69435
+Phago Update,223,220,261,234
+Peak Eye Score,NA,108.0057,NA,191.5598
+Peak Mass Change,117.0736,179.981,134.4764,214.8345
+,,,,
+,,,,
+,,,,
+,,,,
+,,,,
+inf_temp mean.phago all.Ns sd.binom    CV,,,,
+  <fct>         <dbl>  <dbl>    <dbl> <dbl>,,,,
+1 Sham_TN      0.0945   5193     21.1  223.,,,,
+2 MG_TN        0.138    7795     30.5  220.,,,,
+3 Sham_ST      0.0740   5437     19.3  261.,,,,
+4 MG_ST        0.122    7560     28.4  234.,,,,

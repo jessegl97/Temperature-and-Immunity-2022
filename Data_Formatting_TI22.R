@@ -1,0 +1,124 @@
+#T+I 2022 Data Formatting
+rm(list=ls())
+setwd('/Users/jesse/Documents/Virginia Tech/Research/Temp + Immunity 2022/RAW DATA/')
+####read in + format assay files####
+ti <- read.csv("Temp_Immunity_Master_Data_RAW.csv") #Master Data
+phago <- read.csv("Phagocytosis_Raw.csv") #Phagocytosis Assay
+m.phago <- phago %>%
+  dplyr::select('bird_ID', 'Well.1.WBC', 'Well.1.Phago', 'Well.2.Phago', 'Well.2.WBC', 
+                'Well.3.Phago', 'Well.3.WBC', 'Well.4.WBC', 'Well.4.Phago') #format for merge
+
+fever <-read.csv("fever_assay_raw.csv") #Fever Assay
+m.fever <- fever %>%
+  dplyr::select(bird_ID, l_min, l_max, r_min, r_max) #format for merge
+
+vital <- read.csv("temp_immunity_vital_data_raw.csv") #Vital Data
+qpcr <- read.csv("TI22_qpcr_data_14Jun23.csv") #Pathogen Load
+m.qpcr <- qpcr %>%
+  dplyr::select(qpcr_plate, well, bird_ID, cq_value, quantity, log10_quantity, extraction_plate,
+                extr_neg_cntrls, cq8, cq7, cq6, cq5, cq4, cq3, cq2, cq1, qpcr_neg_cntrls, 
+                y_inter, r2, error) #format for merge
+
+ab <- read.csv("mg_elisa.csv")
+
+m.ab <- ab %>%
+  dplyr:: select(bird_ID, elisa_od, elisa_cv) #format for merge
+
+hapto <- read.csv("haptoglobin_interpolated.csv")
+
+m.hapto <- hapto
+
+####merge + format ti and vital data####
+ti <- left_join(ti, vital, by='band_number') #merge ti+vital
+ti <- ti %>%
+  dplyr::select(-stack.y, -cage.y, -treatment.y) #remove extra columns
+  #dplyr::select(-room.y, -cap_date.y, -Location.y, -Sex.y, -cap_mass.y, -trap_method.y, -bci_intake.y, -Intake...Quarantine.Notes.y, -elisa_run_date.y,
+  #              -avg_od.y, -cv.y, -sp.y, -mg_result_od.y, -mg_result_sp.y, -mg_result_sp.x, -rerun_2_mg_result_sp.x, -rerun_2_mg_result_sp.y, -rerun.y, -X, -X.1, -X.2, -X.3, -X.4, -X.5, -X.6, -X.7, -X.8,
+  #       -X.9, -X.10, -X.11) #remove extra columns
+
+#rename columns
+#names(ti)[names(ti) == "bird_ID.x"] <- "bird_ID"
+names(ti)[names(ti) == "treatment.x"] <- "treatment"
+names(ti)[names(ti) == "stack.x"] <- "stack"
+names(ti)[names(ti) == "cage.x"] <- "cage"
+#names(ti)[names(ti) == "room.x"] <- "room"
+#names(ti)[names(ti) == "cap_date.x"] <- "cap_date"
+#names(ti)[names(ti) == "Location.x"] <- "location"
+names(ti)[names(ti) == "Sex"] <- "sex"
+#names(ti)[names(ti) == "cap_mass.x"] <- "cap_mass"
+#names(ti)[names(ti) == "trap_method.x"] <- "trap_method"
+#names(ti)[names(ti) == "bci_intake.x"] <- "bci_intake"
+#names(ti)[names(ti) == "Intake...Quarantine.Notes.x"] <- "Intake.Quarantine.Notes"
+#names(ti)[names(ti) == "elisa_run_date.x"] <- "elisa_run_date"
+#names(ti)[names(ti) == "avg_od.x"] <- "elisa_avg_od"
+#names(ti)[names(ti) == "sp.x"] <- "elisa_sp"
+#names(ti)[names(ti) == "sp.x"] <- "elisa_cv"
+#names(ti)[names(ti) == "mg_result.x"] <- "mg_result"
+#names(ti)[names(ti) == "rerun.x"] <- "rerun"
+
+
+
+#print all instances of " "
+ti[ti == ""]
+
+#replace all " " with NA
+ti[ti == ""] <- NA
+
+#replace all "NA" with NA
+ti[ti == "NA"] <- NA
+
+#drop empty rows
+ti.to.merge <- ti[rowSums(is.na(ti)) !=ncol(ti), ]
+
+####merge ti and assays####
+ti_assays <- list(ti.to.merge, m.phago, m.fever, m.qpcr, m.ab, m.hapto) #list of data frames
+
+#merge assay dataframes
+ti<- ti_assays %>%
+  reduce(left_join, by="bird_ID")
+
+#view(ti)
+
+#remove pid 37 from analysis - data was only collected for RNAseq/qPCR analysis and is not used in any of the bioassay analyses
+ti <- ti %>%
+  filter(dpi !=37)
+
+#make variable combining MG treatment and room temperature
+ti$inf_temp <- paste(ti$treatment, ti$temp, sep = "_")
+
+#make inf_temp a factor with names
+ti<- mutate(ti,inf_temp=factor (inf_temp, 
+                                levels=c("Sham_TN", "MG_TN", "Sham_ST", "MG_ST")))
+
+#make treatment a factor with names
+ti <- mutate(ti,treatment=factor (treatment, 
+                                  levels=c("Sham", "MG")))
+#make new column with temp names
+ti$temp_names <- ifelse(ti$temp == "ST", "Cold",
+                        ifelse(ti$temp == "TN", "Warm", NA))
+
+#make a new column with treatment group names
+ti$groups <- ifelse(ti$inf_temp == "Sham_TN", "Warm Control",
+                    ifelse(ti$inf_temp == "MG_TN", "Warm Infected",
+                           ifelse(ti$inf_temp == "Sham_ST", "Cold Control",
+                                  ifelse(ti$inf_temp == "MG_ST", "Cold Infected", NA))))
+
+#make group names variable a factor
+ti <- mutate(ti,groups=factor (groups, 
+                               levels=c("Warm Control", "Warm Infected", "Cold Control", "Cold Infected")))
+
+#change order of control/infected
+ti$treatment <- factor(ti$treatment, levels = c("Sham", "MG"), labels = c("Control", "Infected"))
+ti$temp <- factor(ti$temp, levels = c("TN", "ST"), labels = c("Warm", "Cold"))
+#tibble w/ number of birds per dpi in each treatment
+t1 <- ti%>%
+  group_by(dpi, groups)%>%
+  summarize(count = n())
+
+t1
+
+
+
+write.csv(ti, "/Users/jesse/Documents/Virginia Tech/Research/Temp + Immunity 2022/RAW DATA/ti_merged_data.csv", row.names=FALSE)
+
+
