@@ -8,18 +8,6 @@ library(lme4)
 
 ti <- read.csv("ti_merged_data.csv")
 
-#poster theme
-theme_set(
-  theme_bw()) #+
-    theme(
-      text = element_text(size = 50),
-      axis.title.y = element_text(size = 100, face = "bold"),
-      axis.text.y = element_text(size = 75,  face = "bold"),
-      axis.title.x = element_text(size = 100, face = "bold"),
-      axis.text.x = element_text(size = 75,  face = "bold"),
-      strip.text = element_text(size = 100,  face = "bold")
-    )
-)
 
 #select only phagocytosis assay and make new wbc total, phago total, and phago score columns
 ti <- ti %>%
@@ -50,6 +38,9 @@ ti <- ti%>%
 glm.phago <- glmer(phago_score~temp+treatment + (1|band_number), weights=wbc_total+phago_total, data=ti, family="binomial")
 summary(glm.phago)
 
+library(glmmTMB)
+glm1 <- glmmTMB(phago_score ~ temp + treatment + (1|band_number), weights=wbc_total+phago_total, data=ti, family="binomial")
+summary(glm1)
 #Model Selection AICc
 
 p1 <- glmer(phago_score~temp+treatment + (1|band_number), weights=wbc_total+phago_total, data=ti, family="binomial")
@@ -108,11 +99,23 @@ plot(p2.resid) #residuals normal; deviation ns; good QQ
 plot(allEffects(p2)) 
 #it certainly looks like infection increases phagocytosis, and that the increase is slightly abrogated by cold temperatures
 
+#install.packages("betareg")
+library(betareg)
+
+#beta regression
+beta_mod <- betareg(phago_score ~ temp + treatment, data=ti)
+summary(beta_mod)
+plot(allEffects(beta_mod))
+plot(resid(beta_mod))
+
+emm_results <- emmeans(beta_mod, ~ temp + treatment, scale = "response")
+pairs(emm_results)
+
 ####Model Predictions####
 dat.new=expand.grid(temp=unique(ti$temp),
                    treatment=unique(ti$treatment))#new grid to put predictions into
-dat.new$yhat = predict(glm.phago, type="response", newdata=dat.new, re.form=NA) #predicted values based off glm.phago model
-head(dat.new)
+dat.new$yhat = predict(beta_mod, type="response", newdata=dat.new, re.form=NA) #predicted values based off glm.phago model
+
 dat.new$inf_temp <-  paste(dat.new$treatment, dat.new$temp, sep = "_")
 
 #plot predicted values over raw data
@@ -258,12 +261,12 @@ AIC(glm.phago2a,glm.phago2b, glm.phago2c, glm.phago2d, glm.phago3, glm.phago2)
 
 #quick graph showing differences in variance by group
 var <- c(0.9908, 0.7769, 0.3096, 0.5205)
-ci <- c(0.9954, 0.8814, 0.5564, 0.7215)
+sd <- c(0.9954, 0.8814, 0.5564, 0.7215)
 g <- c("Infected Cold", "Control Cold", "Infected Warm", "Control Warm")
 temp <- c("Cold", "Cold", "Warm", "Warm")
 
 
-variability <- data.frame(g,var, ci, temp)
+variability <- data.frame(g,var, sd, temp)
 variability$min <- variability$var - variability$ci
 variability$max <- variability$var + variability$ci
 
@@ -343,7 +346,7 @@ ggplot(p.ti, aes(x=phago_score, fill=groups))+
   geom_histogram(binwidth = 0.01, position="identity", alpha=1, color="black")+
   geom_vline(data = p.ti, aes(xintercept = groupmean, color = "red"), linetype = "dotted",alpha = 1, show.legend=FALSE) + #mean of each group to show differences
   geom_vline(data=m.ti, aes(xintercept = meanall, color = "black"), linetype="dashed", alpha=1, show.legend=FALSE)+ #mean of all groups combined to compare
-  scale_fill_manual(values=c( "gray75", "white", "gray35","black"), labels=treat_names)+
+  scale_fill_manual(values=c( "gray75", "white", "gray35","black"))+
   scale_color_manual(values = c("black", "red"), guide = guide_legend(title= NULL))+
   facet_wrap(~groups, nrow=4, labeller = as_labeller(treat_names_n), scales="fixed")+
   labs(x="Phagocytosis Score", y="Count", fill="Treatment")+
@@ -371,19 +374,18 @@ m.cv.all <- p.ti %>%
             sd.binom = sqrt(all.Ns*mean.phago*(1-mean.phago)), #standard deviation = square root(N * mean * (1-mean))
             bird_cv = (sd.binom/mean.phago)) #CV = standard deviation / mean * 100
 
-
+m.cv.all
 #generate error bar values
 m.cv.all$max <- m.cv.all$bird_cv + m.cv.all$sd.binom
 m.cv.all$min <- m.cv.all$bird_cv - m.cv.all$sd.binom
-m.cv.all$groups <- factor(m.cv.all$groups, levels = c("Control Cold", "Infected Cold", "Control Warm", "Infected Warm"))
+m.cv.all$groups <- factor(m.cv.all$groups, levels = c("Cold Control", "Cold Infected", "Warm Control", "Warm Infected"))
 #Graph of CVs
-cv.all.primary <- ggplot(m.cv.all, aes(x=groups, y=bird_cv, shape=groups, color=temp))+
+cv.all.primary <- ggplot(m.cv.all, aes(x=groups, y=bird_cv, shape=groups))+
   labs(x="Treatment Groups", y="CV", shape="Treatment Groups", color="Temperature")+
   geom_point(aes(shape=groups), size=3)+
-  scale_shape_manual(values = c(0, 15, 1, 16))+
-  scale_color_manual(values=c("blue", "red"))+
-  ylim(c(0, 300))+
-  theme_minimal()
+  #scale_shape_manual(values = c(0, 15, 1, 16))+
+  #scale_color_manual(values=c("blue", "red"))+
+  ylim(c(0, 300))
 
 cv.all.primary
 

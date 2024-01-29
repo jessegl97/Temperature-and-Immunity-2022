@@ -77,7 +77,7 @@ ti_assays <- list(ti.to.merge, m.phago, m.fever, m.qpcr, m.ab, m.hapto) #list of
 ti<- ti_assays %>%
   reduce(left_join, by="bird_ID")
 
-#view(ti)
+view(ti)
 
 #remove pid 37 from analysis - data was only collected for RNAseq/qPCR analysis and is not used in any of the bioassay analyses
 ti <- ti %>%
@@ -117,7 +117,11 @@ t1 <- ti%>%
 
 t1
 
+a <- ti %>% 
+  filter(dpi == 28 & groups == "Warm Infected")
 
+a_unique <- unique(ti$bird_ID)
+ti <- subset(ti, !duplicated(bird_ID))
 
 write.csv(ti, "/Users/jesse/Documents/Virginia Tech/Research/Temp + Immunity 2022/RAW DATA/ti_merged_data.csv", row.names=FALSE)
 
