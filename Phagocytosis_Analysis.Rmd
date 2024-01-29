@@ -180,7 +180,7 @@ beta_mod1 <- betareg(phago_score ~ 1, data=ti)
 ti$resid <-resid(beta_mod1) #residuals
 ti$resid2 <-(resid(beta_mod1)^2) #residuals squared
 ti$resid3 <- abs(resid(beta_mod1)) #absolute residuals
-
+hist(ti$resid)
 #all groups
 lm.resid1 <- glm(resid~groups, data=ti)
 summary(lm.resid1) #warm infected had more positive residuals = were overall higher than the mean > makes sense

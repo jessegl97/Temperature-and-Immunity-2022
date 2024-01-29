@@ -39,6 +39,7 @@ ti$tes <- ti$total_eye_score*2
 ti$threshold_cutoff = 100
 ti$sympt_cutoff = 0.1
 
+
 ti <- ti %>%
   mutate(infected = ifelse(quantity>threshold_cutoff, 1, 0))  #generate infection data; if path load > 50 copies = infected
 
@@ -50,13 +51,15 @@ ti <- ti %>%
 ti$ever_infected
 #new column with whether the bird is diseased on a particular day
 ti <- ti %>%
-  mutate(diseased= ifelse(total_eye_score>sympt_cutoff, 1, 0))
+  mutate(diseased= ifelse(total_eye_score>sympt_cutoff, 1, 0), na.rm=T)
 ti$diseased
-
+a <- ti %>%
+  filter(is.na(total_eye_score))
+a
 #new column with whether the bird is ever diseased
 ti <- ti %>%
   group_by(band_number) %>%
-  mutate(ever_diseased = ifelse(any(coalesce(diseased, 0) == 1), 1, 0)) %>%
+  mutate(ever_diseased = ifelse(any(coalesce(diseased, 0) == 1), 1, 0), na.rm=T) %>%
   ungroup()
 
 #table w/ number of infected birds 
@@ -88,6 +91,10 @@ ggplot(ti.f, aes(x=fever_score, y=l_max + r_max, color=groups))+
   geom_point()+
   facet_wrap(~dpi)
 
+ggplot(ti.f, aes(x=fever_change, y=total_eye_score, color=groups))+
+  geom_point()+
+  geom_smooth(aes(groups=groups), method = "lm", se=TRUE)+
+  facet_wrap(~dpi)
 
 #fever change from previous score
 ti.f <- ti.f %>%
@@ -96,6 +103,8 @@ ti.f <- ti.f %>%
 
 print(ti.f)
 
+ggplot(ti.f, aes(x=fever_diff, y=fever_score, color=groups))+
+  geom_point()
 #only days w/fever
 ti.f <- ti.f%>%
   filter(dpi %in% c(0, 3, 7, 14, 18, 24, 28, 35))
@@ -108,7 +117,7 @@ p
 ggplot(ti.f, aes(x=fever_change, fill = fct_rev(temp)))+
   geom_histogram(position = "identity", alpha=0.75, binwidth = 1, color="black")+
   geom_vline(aes(xintercept=0))+
-  facet_wrap(~ever_diseased~temp~dpi, ncol=7)
+  facet_wrap(~ever_diseased~temp~dpi, ncol=8)
 
 ####Animated Histograms####
 #install.packages("gganimate")
@@ -292,7 +301,6 @@ ti.f%>%
  dplyr::select(dpi, band_number, fever_change, fever_score)
 
 
-
 #graph showing fever change over the course of infection for poster
 ggplot(data=ti.f %>% filter(treatment == "Infected"), aes(x=dpi, y=fever_change, color = temp))+
   geom_jitter(aes(shape=temp), size=1, width = 0.15, stroke=2)+
@@ -315,9 +323,7 @@ ggplot(data=ti.f %>% filter(treatment == "Infected"), aes(x=dpi, y=fever_change,
 
 ggplot(data=ti.f, aes(x=dpi, y=fever_change, color = groups))+
   geom_jitter(aes(shape=treatment), size=1, width = 0.15)+
-  #geom_path(aes(x = dpi, y = fever_change, group = groups), alpha = 0.3, size = 0.5) +  
   geom_line(aes(x=dpi, y=fever_change, linetype=treatment, group=(band_number)), alpha=0.5, size=0.5)+
-  #geom_smooth(aes(group=band_number, linetype=treatment), method="loess", se=FALSE, size=0.2, span=0.65) +
   stat_summary(aes(group=groups, linetype=treatment), fun=mean, geom="line", alpha=1, size=1)+
   stat_summary(aes(group=groups, linetype=treatment), fun=mean, geom="line", color="black", alpha=1, size=.5)+
   stat_summary(aes(group=groups), fun=mean,
@@ -330,9 +336,7 @@ ggplot(data=ti.f, aes(x=dpi, y=fever_change, color = groups))+
   scale_linetype_manual(values=c("dashed", "solid"))+
   labs(x="Days Post Infection", y="Fever Score", 
        linetype= "Treatment", shape= "Treatment", color="Temperature")+
-  facet_wrap(~groups, labeller = as_labeller(c(group_names)), scales="fixed")+
-  #facet_wrap(~groups~ever_diseased, labeller = as_labeller(c(group_names, dis_names)), scales="fixed")+
-  theme_bw()
+  facet_wrap(~groups, labeller = as_labeller(c(group_names)), scales="fixed")
 
 lmfs<- glmmTMB(fever_change~temp + (1|band_number), data=ti.f)
 
@@ -362,7 +366,7 @@ library(transformr)
 f<- ggplot(data = ti.f %>% filter(ever_diseased == 1), aes(x = dpi, y = fever_change, color = as.factor(band_number))) +
   geom_jitter(
     aes(shape = treatment, alpha=cumsum(!is.na(fever_change))),
-    size = 1, alpha = 0.5) +
+    size = 1, alpha = 1, width=0.25, height=0.01) +
   geom_line(aes(x = dpi, y = fever_change, group=as.factor(band_number)), alpha = 0.75, size = 0.5) +
   stat_summary(aes(group=groups, linetype=treatment), fun=mean, geom="line", alpha=1, size=0.25)+
   stat_summary(aes(group=groups, linetype=treatment), fun=mean, geom="line", color="black", alpha=1, size=0.25)+
@@ -381,11 +385,11 @@ f<- ggplot(data = ti.f %>% filter(ever_diseased == 1), aes(x = dpi, y = fever_ch
   ) +
   facet_wrap(~temp~ever_diseased, labeller = as_labeller(c(temp_names, dis_names)), scales = "fixed") +
   theme_bw() 
-
+f
 e<- ggplot(data = ti.f %>% filter(ever_diseased == 1), aes(x = dpi, y = total_eye_score, color = as.factor(band_number))) +
   geom_jitter(
     aes(shape = treatment, alpha=cumsum(!is.na(total_eye_score))),
-    size = 1, alpha = 0.5) +
+    size = 1, alpha = 1, width=0.25, height=0.01) +
   geom_line(aes(x = dpi, y = total_eye_score, group=as.factor(band_number)), alpha = 0.75, size = 0.5) +
   stat_summary(aes(group=groups, linetype=treatment), fun=mean, geom="line", alpha=1, size=0.25)+
   stat_summary(aes(group=groups, linetype=treatment), fun=mean, geom="line", color="black", alpha=1, size=0.25)+
@@ -577,13 +581,14 @@ g.var <- ggplot(variability %>% filter(temp != "all"), aes(x=g, y=var, shape = g
 g.var
 
 #quantify w stats
-glm1 <- glmmTMB(fever_change ~ (1|dpi) + (1|band_number), data=ti.f)
+glm1 <- glmmTMB(fever_change ~ 1 + (1|dpi) + (1|band_number), data=ti.f)
 
 glm1
 
 ti.f$resid <- resid(glm1)
 hist(ti.f$resid)
 lm1 <- glm(resid ~ temp*treatment, data=ti.f)
+summary(lm1)
 lm2 <- glm(resid ~ temp, data=ti.f)
 anova(lm2)
 
