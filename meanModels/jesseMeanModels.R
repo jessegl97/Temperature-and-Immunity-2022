@@ -22,7 +22,7 @@ library(tidyverse)
 library(lme4)
 library(glmmTMB)
 library(effects)
-library(AICcmodavg)
+#library(AICcmodavg)
 library(DHARMa)
 library(optimx)
 
@@ -75,7 +75,15 @@ source("dataCleaning_fever.R")
 
 ti.f$dpi <- as.factor(ti.f$dpi)
 
-lm2 <- lmer(fever_change ~ temp*treatment*dpi + (1|band_number),data=ti.f)
+lm2 <- glmmTMB(fever_change ~ temp*treatment*dpi + 
+                 ar1(dpi +0 |band_number),
+                data=ti.f)
+
+lm2og <- glmmTMB(fever_change ~ temp*treatment*dpi + 
+                 (1|band_number),
+               data=ti.f)
+
+BIC(lm2, lm2og) #AR1 covariance structure better
 
 hist(residuals(lm2))
 plot(residuals(lm2), predict(lm2))
@@ -84,9 +92,9 @@ car::Anova(lm2, type = "III")
 ### stepwise selection:
 car::Anova(lm2, type = "III")
 
-lm2 <- lmer(fever_change ~ temp + treatment + dpi + 
-              treatment:dpi + temp:dpi + 
-              temp:treatment + (1|band_number),data=ti.f)
+lm2 <- glmmTMB(fever_change ~ temp + treatment + dpi + 
+              treatment:dpi + temp:dpi + ar1(dpi + 0|band_number),
+            data=ti.f)
 
 car::Anova(lm2, type = "III")
 
@@ -152,26 +160,15 @@ source("dataCleaning_eyeScore.R")
 
 ti.mg.mod$band_number <- as.factor(ti.mg.mod$band_number)
 
-lm1 <- glmer(tes ~ temp*dpi + (1|band_number),
+lm1 <- glmmTMB(tes ~ temp*dpi + (1|band_number),
              data=ti.mg.mod, 
-             family = poisson,
-             control = glmerControl(optimizer ='optimx', optCtrl=list(method='L-BFGS-B')))
+             family = poisson)
 
-AF1 <- allFit(lm1, verbose=F)
-AF1_lliks <- sort(sapply(AF1,logLik))
+lm1ar<- glmmTMB(tes ~ temp*dpi + ar1(dpi + 0|band_number),
+                data=ti.mg.mod, 
+                family = poisson)
 
-# Model parameters do not depend on optimizer - all within thousandths of a decimal
-
-bind_rows(AF1_lliks) %>%
-  remove_rownames(.) %>%
-  mutate(model = c("NB Mixed Effects Model")) %>%
-  select(model, everything()) %>%
-  group_by(model) %>%
-  gather(., Optimizer, llik, 2:ncol(.)) %>%
-  ggplot(.,aes(Optimizer, llik)) + geom_point() +
-  facet_wrap(~model) + coord_flip() +
-  ylab("Log-Likelihood") +
-  labs(title = "The Log-Likelihoods of Seven Different Optimizers in Our Model")
+BIC(lm1, lm1ar) #Difference < 2 effectively the same
 
 simulateResiduals(lm1, plot = T)
 
