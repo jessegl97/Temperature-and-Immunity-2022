@@ -1,10 +1,12 @@
 #T+I 2022 MG IgY Antibody Analysis
 rm(list=ls())
-setwd("/Users/jesse/Documents/Virginia Tech/Research/Temp + Immunity 2022/RAW DATA")
+# setwd("/Users/jesse/Documents/Virginia Tech/Research/Temp + Immunity 2022/RAW DATA")
 library(ggplot2)
 library(tidyverse)
 library(glmmTMB)
- 
+library(lme4)
+library(DHARMa)
+
 ti <- read.csv("ti_merged_data.csv")
 
 #combine dpi 9 and 10
@@ -75,9 +77,61 @@ ti.pi <- ti %>%
   filter(dpi > 0)
 unique(ti.pi$dpi)
 
-lm1<-glmer(elisa_od~treatment+temp + (1|band_number), data=ti.pi, family=Gamma())
+ti.pi$dpi <- as.factor(ti.pi$dpi)
+
+lm1<-glmmTMB(elisa_od~treatment+temp+dpi + treatment:dpi + 
+               (1|band_number), data=ti.pi, 
+           family=Gamma(link = "inverse"))
+
+
 summary(lm1)
-plot(allEffects(lm1))
+car::Anova(lm1, type = "III")
+
+simulationOutput <-simulateResiduals(lm1, plot = T)
+
+library(emmeans)
+library(multcomp)
+means <- as.data.frame(cld(emmeans(lm1, pairwise ~ treatment:dpi, type = "response",
+            adjust = "tukey")))
+
+ggplot(means, aes(x = dpi, y = response))+
+  geom_crossbar(aes(ymin = asymp.LCL, ymax = asymp.UCL, fill = treatment),
+                alpha = 0.5)+
+  geom_jitter(data = ti.pi, aes(x = dpi, y = elisa_od, color = treatment),
+              width = 0.1)+
+  facet_wrap(~temp)+
+  theme_bw()
+
+
+hist(residuals(lm1))
+
+plot(residuals(lm1), predict(lm1, type = "response"))
+
+hist(predict(lm1, type = "response"))
+
+
+ggplot(data = ti.pi, aes(x = elisa_od))+
+  geom_histogram(binwidth = 0.001, fill = "white", color = "black")+
+  facet_wrap(~treatment)
+
+ggplot(data = ti.pi, aes(x = treatment, y = elisa_od))+
+  geom_boxplot()+
+  geom_jitter(width = 0.1)
+
+
+ggplot(data = ti.pi, aes(x = dpi, y = elisa_od, color = treatment))+
+  geom_boxplot()+
+  geom_jitter(width = 0.1)+
+  facet_wrap(~temp)
+
+
+hist((ti.pi$elisa_od), breaks = 100, col = ti.pi$treatment)
+range(ti.pi$elisa_od, na.rm = T)
+lm1<-lmer(elisa_od~treatment+temp + (1|band_number), data=ti.pi)
+
+simulateResiduals(lm1, plot = T)
+
+plot(effects::allEffects(lm1))
 
 lm1.5<-glm(elisa_od~treatment+temp, data=ti.pi%>% filter(dpi==28), family=Gamma())
 summary(lm1.5)
@@ -86,6 +140,7 @@ hist(resid(lm1))
 hist(resid(lm1))
 qqnorm(resid(lm1))
 qqline(resid(lm1))
+plot(residuals(lm1), predict(lm1))
 
 #model selection
 a1<-glmmTMB(elisa_od~treatment*temp + (1|band_number), data=ti.pi, family=Gamma(log))
@@ -99,8 +154,8 @@ a6<-glmmTMB(elisa_od~treatment+temp + sex + (1|band_number), data=ti.pi, family=
 #a8<-glmmTMB(elisa_od~temp + (1|dpi) + (1|band_number), data=ti.pi, family=Gamma())
 #a9<-glmmTMB(elisa_od~treatment * temp + (1|dpi) + (1|band_number), data=ti.pi, family=Gamma())
 
-#temperature is correlated with band number 
-#band_number only - more conservative and don't really need both 
+#temperature is correlated with band number
+#band_number only - more conservative and don't really need both
 
 a12 <-glmmTMB(elisa_od~treatment+temp + (1|band_number), data=ti.pi, family=Gamma())
 a13 <-glmmTMB(elisa_od~treatment+temp + (1|dpi), data=ti.pi, family=Gamma())
@@ -111,7 +166,7 @@ resid <- simulateResiduals(a11)
 plot(resid)
 summary(a11)
 hist(ti.pi$elisa_od)
-aictab(cand.set=list(a1, a2, a3, a4, a5, a6), 
+aictab(cand.set=list(a1, a2, a3, a4, a5, a6),
        modnames=c("a1", "a2", "a3", "a4", "a5", "a6"))
 summary(a2)
 plot(allEffects(a6))
@@ -188,14 +243,14 @@ g.ab <- ggplot(data=ti %>% filter(dpi == 28), aes(x=groups, y=elisa_od, shape=gr
 g.ab
 
 #split violin plot attempt
-GeomSplitViolin <- ggproto("GeomSplitViolin", GeomViolin, 
+GeomSplitViolin <- ggproto("GeomSplitViolin", GeomViolin,
                            draw_group = function(self, data, ..., draw_quantiles = NULL) {
                              data <- transform(data, xminv = x - violinwidth * (x - xmin), xmaxv = x + violinwidth * (xmax - x))
                              grp <- data[1, "group"]
                              newdata <- plyr::arrange(transform(data, x = if (grp %% 2 == 1) xminv else xmaxv), if (grp %% 2 == 1) y else -y)
                              newdata <- rbind(newdata[1, ], newdata, newdata[nrow(newdata), ], newdata[1, ])
                              newdata[c(1, nrow(newdata) - 1, nrow(newdata)), "x"] <- round(newdata[1, "x"])
-                             
+
                              if (length(draw_quantiles) > 0 & !scales::zero_range(range(data$y))) {
                                stopifnot(all(draw_quantiles >= 0), all(draw_quantiles <=
                                                                          1))
@@ -211,16 +266,16 @@ GeomSplitViolin <- ggproto("GeomSplitViolin", GeomViolin,
                              }
                            })
 
-geom_split_violin <- function(mapping = NULL, data = NULL, stat = "ydensity", position = "identity", ..., 
-                              draw_quantiles = NULL, trim = FALSE, scale = "area", na.rm = FALSE, 
+geom_split_violin <- function(mapping = NULL, data = NULL, stat = "ydensity", position = "identity", ...,
+                              draw_quantiles = NULL, trim = FALSE, scale = "area", na.rm = FALSE,
                               show.legend = NA, inherit.aes = TRUE) {
-  layer(data = data, mapping = mapping, stat = stat, geom = GeomSplitViolin, 
-        position = position, show.legend = show.legend, inherit.aes = inherit.aes, 
+  layer(data = data, mapping = mapping, stat = stat, geom = GeomSplitViolin,
+        position = position, show.legend = show.legend, inherit.aes = inherit.aes,
         params = list(trim = trim, scale = scale, draw_quantiles = draw_quantiles, na.rm = na.rm, ...))
 }
 
 #split violin plot
-ggplot(ti %>% filter(dpi != -28 & treatment=="Infected"), aes(x=0, y=elisa_od, fill = fct_rev(temp)))+ 
+ggplot(ti %>% filter(dpi != -28 & treatment=="Infected"), aes(x=0, y=elisa_od, fill = fct_rev(temp)))+
   geom_split_violin(alpha=0.75)+
   geom_point(
     aes(group = fct_rev(temp)),  # Group by temp
@@ -279,7 +334,7 @@ ti%>%
   facet_wrap(~groups~ever_infected)
 g.ab.change
 
-#####Variance##### 
+#####Variance#####
 
 #COME BACK TO THIS ONE
 
@@ -372,7 +427,7 @@ ggplot(ti.ab, aes(x=elisa_od, fill=groups))+
   labs(fill="Treatment Group", x= "ELISA OD", y= "Count")+
   geom_vline(data=ti.ab,aes(xintercept=groupmean, color="red"), linetype="dotted", alpha=1, size=0.75, show.legend=FALSE)+
   facet_grid(c("groups"))
-  
+
 #density plot of treatment groups across all sample days
 ggplot(ti.ab, aes(x=elisa_od, fill=groups))+
   geom_density()+
@@ -382,8 +437,8 @@ ggplot(ti.ab, aes(x=elisa_od, fill=groups))+
   geom_vline(data=ti.ab,aes(xintercept=groupmean, color="red"), linetype="dotted", alpha=1, size=0.75, show.legend=FALSE)+
   facet_grid(c("groups"))
 
-  
-  
+
+
   #Histogram showing distribution of elisa_od by dpi and treatment groups
   ggplot(ti.ab, aes(x=elisa_od, fill=groups))+
     #geom_density(color="black", alpha=0.5)+
@@ -407,18 +462,18 @@ ggplot(ti.ab, aes(x=elisa_od, fill=groups))+
     scale_color_manual(values = c("red"), guide = guide_legend(title= NULL))+
     facet_grid(c("dpi","groups"))+
     theme_bw()
-  
+
 ####Calculate CV####
-  cv.all <- ti.ab %>% 
+  cv.all <- ti.ab %>%
     filter(dpi !=-28)%>%
     group_by(groups, temp)%>%
     summarise(bird_cv = sd(elisa_od)/mean(elisa_od),
               bird_sd = sd(elisa_od))
-  
+
   #generate error bar values
   cv.all$max <- cv.all$bird_cv + cv.all$bird_sd
   cv.all$min <- cv.all$bird_cv - cv.all$bird_sd
-   
+
   #Graph of CV calculated from dpi 9 to 28 with error bars +/- 1 SD
   cv.all.primary <- ggplot(cv.all, aes(x=groups, y=bird_cv, shape=groups))+
     geom_point(aes(shape=groups), size=3)+
@@ -427,7 +482,7 @@ ggplot(ti.ab, aes(x=elisa_od, fill=groups))+
     labs(x="Treatment Groups", y="CV", shape="Treatment Groups", color="Temperature")+
     ylim(c(0, 0.3))+
     theme_minimal()
-  
+
   cv.all.primary
 
 ggplot(ti.ab %>% filter(dpi == 9 | dpi == 28), aes(x=groups, y=elisa_od, shape=groups))+
@@ -444,25 +499,25 @@ cv.all.day <- ti.ab %>%
     min = bird_cv - bird_sd
   ) %>%
   ungroup()  # Remove grouping for further operations
-  
+
   cv.primary <- ggplot(cv.all.day, aes(x=dpi, y=bird_cv, shape=groups, color=temp))+
     geom_point(size=3)+
     geom_line(aes(linetype=treatment))+
     scale_shape_manual(values = c( 0, 15, 1, 16))+
     scale_color_manual(values=c("blue", "red"))+
     scale_linetype_manual(values = c("dashed", "solid"))+
-    labs(x="Days Post Infection", y="CV", shape="Infection Treatment", 
+    labs(x="Days Post Infection", y="CV", shape="Infection Treatment",
          linetype="Infection Treatment", color="Temperature")+
     #scale_fill_manual(values=c("gray75", "white", "gray35", "black"))+
     #                  labels = c("High", "Low", "Sham"))+
     theme_bw()
-  
+
   cv.primary
-  
+
   ggplot(ti.ab, aes(x=groups, y=elisa_od, shape=groups))+
     geom_jitter(width = 0.25)+
   facet_wrap(~dpi)
-  
+
 unique_counts <- ti %>%
   #filter(!is.na(elisa_od)) %>%
   group_by(groups) %>%
@@ -479,7 +534,7 @@ unique_group_counts <- ti %>%
 
 unique_group_counts
 
-#calculate difference from baseline to get difference in Ab OD 
+#calculate difference from baseline to get difference in Ab OD
 ti.t <- ti %>%
   drop_na(band_number, elisa_od, dpi, treatment)
 
@@ -529,7 +584,7 @@ g.ab.change <- ggplot(data=ti.t %>%
 
 g.ab.change
 
-#calculate difference from baseline to get overall difference in Ab OD 
+#calculate difference from baseline to get overall difference in Ab OD
 ti.tr <- ti %>%
   drop_na(band_number, elisa_od, dpi, treatment)
 

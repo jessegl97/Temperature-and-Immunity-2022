@@ -73,8 +73,65 @@ ti.f <- ti.f %>%
 
 I used generalized linear mixed models with a gaussian distribution to test whether temperature or treatment with MG affected change in fever scores from pre-infection baseline fever scores.
 ```{r}
-lm1 <- glm(fever_change ~temp*treatment + (1|band_number),data=ti.f)
+# AGA - add dpi as a fixed effect
 
+ti.f$dpi <- as.factor(ti.f$dpi)
+
+lm1 <- lmer(fever_score ~ temp*treatment*dpi + (1|band_number),data=ti.f)
+
+car::Anova(lm1, type = "III")
+hist(residuals(lm1))
+plot(residuals(lm1), predict(lm1))
+
+
+#AGA - stepwise selection:
+car::Anova(lm1, type = "III")
+
+lm2 <- lmer(fever_change ~ temp + treatment + dpi + 
+                            treatment:dpi + temp:dpi + 
+                              temp:treatment + (1|band_number),data=ti.f)
+
+car::Anova(lm2, type = "III")
+
+# Keep two-way interactions
+
+plot(allEffects(lm2))
+
+library(emmeans)
+library(multcomp)
+cld(emmeans(lm2, pairwise ~ dpi:treatment, adjust = "tukey"))
+
+means <- as.data.frame(cld(emmeans(lm2, pairwise ~ dpi:treatment, adjust = "tukey")))
+
+ggplot(means, aes(x = dpi, y = emmean, color = treatment))+
+  geom_line(aes(group = treatment))+
+  geom_point()
+
+
+cld(emmeans(lm2, pairwise ~ dpi:temp, adjust = "tukey"))
+
+means2 <- as.data.frame(cld(emmeans(lm2, pairwise ~ dpi:temp, adjust = "tukey")))
+
+ggplot(means2, aes(x = dpi, y = emmean, color = temp))+
+  geom_line(aes(group = temp))+
+  geom_point()
+
+ti.f$pred <- predict(lm2)
+
+ti.fMeans <- ti.f %>% group_by(dpi, treatment, temp) %>%
+  summarize(meanFevCh = mean(pred))
+
+ggplot(ti.fMeans, aes(x = dpi, y = meanFevCh))+
+geom_line(aes(group = treatment, color = treatment),
+          linewidth = 1.2)+
+geom_point(aes(color = treatment), size = 3)+
+geom_jitter(data = ti.f, aes(x = dpi, y = fever_change, color = treatment), 
+            alpha = 0.2,
+            width = 0.1)+
+theme_bw()+
+facet_wrap(~temp)
+
+####
 summary(lm1)
 plot(allEffects(lm1))
 
