@@ -707,7 +707,7 @@ anim_hist<- ggplot(f.ti, aes(x=fever_change, fill=groups))+
   exit_fade()+
   theme_bw()
 
-#animate(anim_hist, renderer = gifski_renderer())
+animate(anim_hist, renderer = gifski_renderer())
 #anim_save("/Users/jesse/Documents/Virginia Tech/Research/Temp + Immunity 2022/Animated Plots/fever_score_hist_grps.gif",
 #          animation = last_animation(), renderer = gifski_renderer(), format = "gif")
 
