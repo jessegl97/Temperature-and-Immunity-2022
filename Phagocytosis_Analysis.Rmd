@@ -56,8 +56,13 @@ Each cell is treated as phagocytic or not.
 
 Infection with MG (p = 0.0296), but not temperature treatment (0.161) significantly affects phagocytic activity.
 ```{r Phagocytosis binomial GLM}
+
 glm1 <- glmer(phago_score~temp+treatment + (1|band_number), weights=wbc_total+phago_total, data=ti, family="binomial")
+
 summary(glm1)
+
+simulateResiduals(glm1, plot = T)
+
 plot(allEffects(glm1))
 
 #Model Selection

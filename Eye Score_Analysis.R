@@ -1,7 +1,7 @@
 #T+I 23 Eye Score Analysis
 rm(list=ls())
 ####read in + format data####
-setwd('/Users/jesse/Documents/Virginia Tech/Research/Temp + Immunity 2022/RAW DATA/')
+# setwd('/Users/jesse/Documents/Virginia Tech/Research/Temp + Immunity 2022/RAW DATA/')
 library(ggplot2)
 library(tidyverse)
 library(lme4)
@@ -61,9 +61,69 @@ ti.mg <- ti.mg%>%
 summary(ti.mg)
 ti.mg<- na.omit(ti.mg)
 ####Eye Score Models####
-lm1 <- glmmTMB(tes ~ temp + (1|band_number), data=ti.mg, family=nbinom2)
+library(glmmTMB)
+library(DHARMa)
+
+ti.mg$dpi <- as.factor(ti.mg$dpi)
+
+lm1 <- glmmTMB(tes ~ temp + dpi + (1|band_number),
+               data=ti.mg, 
+               family=poisson)
+
 summary(lm1)
-plot(allEffects(lm1))
+
+simulateResiduals(lm1, plot = T)
+
+library(MASS)
+library(emmeans)
+library(multcomp)
+library(pscl)
+
+#Remove days -12 and 3 from analysis because no eyescore - can't model
+table(ti.mg$dpi, ti.mg$total_eye_score)
+
+ti.mg.mod <- ti.mg %>% filter(dpi != "-12" & dpi != "3"& dpi != "35")
+
+table(ti.mg.mod$dpi, ti.mg.mod$total_eye_score)
+
+AF1 <- allFit(lm1, verbose=F)
+AF1_lliks <- sort(sapply(AF1,logLik))
+
+# Model parameters do not depend on optimizer - all within thousandths of a decimal
+library(tidyverse)
+bind_rows(AF1_lliks) %>%
+  remove_rownames(.) %>%
+  mutate(model = c("NB Mixed Effects Model")) %>%
+  select(model, everything()) %>%
+  group_by(model) %>%
+  gather(., Optimizer, llik, 2:ncol(.)) %>%
+  ggplot(.,aes(Optimizer, llik)) + geom_point() +
+  facet_wrap(~model) + coord_flip() +
+  ylab("Log-Likelihood") +
+  labs(title = "The Log-Likelihoods of Seven Different Optimizers in Our Model")
+
+library(optimx)
+
+lm1 <- glmer(tes ~ temp*dpi + (1|band_number),
+               data=ti.mg.mod, 
+             family = poisson,
+             control = glmerControl(optimizer ='optimx', optCtrl=list(method='L-BFGS-B')))
+summary(lm1)
+
+simulateResiduals(lm1, plot = T)
+
+car::Anova(lm1, type = "III")
+
+summary(lm1)
+
+means <- cld(emmeans(lm1, pairwise ~ dpi*temp, adjust = "tukey", type = "response"))
+
+ggplot(means, aes(x = dpi, y = rate, color = temp))+
+  geom_jitter(data = ti.mg, aes(x = dpi, y = tes), 
+              width = 0.1, alpha = 0.5)+
+  geom_line(aes(group = temp), linewidth = 1.2)+
+  geom_point(size = 3)+
+  theme_bw()
 
 #zero inflated model
 #library(pscl)
