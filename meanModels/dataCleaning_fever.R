@@ -40,6 +40,9 @@ ti <- ti %>%
 ti.tr <- ti %>%
   drop_na (band_number, fever_score, dpi, treatment, temp, groups, sex)
 
+ti.tr <- ti.tr %>%
+  filter(dpi !=24)
+
 #fever change from baseline
 ti.f <- ti.tr %>%
   group_by(band_number) %>%
