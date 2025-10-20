@@ -239,7 +239,7 @@ summary(lm1)
 hist(resid(lm1))
 plot(allEffects(lm1))
 
-Anova(lm1, "III")
+car::Anova(lm1, "III")
 table(ti.f$fever_change)
 lm2 <- glmmTMB(fever_change ~temp*treatment +  (1|band_number),data=ti.f)
 hist(resid(lm2))
@@ -253,7 +253,7 @@ summary(lm2)
 #tempTN:treatmentSham  -0.3144     0.3423  -0.919 0.358313    
 
 plot(allEffects(lm2))
-Anova(lm2, "III")
+car::Anova(lm2, "III")
 
 
 range(ti.f$fever_change)
@@ -269,6 +269,7 @@ e5 <- glmmTMB(fever_change ~temp + (1|band_number),data=ti.f)
 e6 <- glmmTMB(fever_change ~treatment + (1|band_number),data=ti.f) 
 e7 <- glmmTMB(fever_change ~1 + (1|band_number),data=ti.f)
 
+library(AICcmodavg)
 aictab(cand.set=list(e1, e2,e3,e4,e6,e7),
        modnames=c("e1", "e2","e3","e4", "e6","e7"))
 
@@ -304,10 +305,10 @@ ti.f%>%
 #graph showing fever change over the course of infection for poster
 ggplot(data=ti.f %>% filter(treatment == "Infected"), aes(x=dpi, y=fever_change, color = temp))+
   geom_jitter(aes(shape=temp), size=1, width = 0.15, stroke=2)+
-  #geom_line(aes(group=band_number, linetype=temp), method="loess", se=FALSE, size=1) +
-  geom_smooth(aes(group=band_number, linetype=temp), method="loess", se=FALSE, span = 0.71, size=0.5)+ 
-  stat_summary(aes(group=temp, linetype=temp), fun=mean, geom="line", alpha=1, size=2)+
-  stat_summary(aes(group=temp, linetype=temp), fun=mean, geom="line", color="black", alpha=1, size=.5)+
+  geom_line(aes(group=band_number, linetype=temp), method="loess", se=FALSE, size=0.5, alpha=0.25) +
+  #geom_smooth(aes(group=band_number, linetype=temp), method="loess", se=FALSE, span = 0.71, size=0.5, alpha=0.25)+ 
+  stat_summary(aes(group=temp, linetype=temp), fun=mean, geom="line", alpha=1, size=1)+
+  #stat_summary(aes(group=temp, linetype=temp), fun=mean, geom="line", color="black", alpha=1, size=.5)+
   #stat_summary(aes(group=groups), fun=mean,
   #             fun.min = function(x) mean(x)-sd(x),
   #             fun.max = function(x) mean(x)+sd(x),
@@ -324,8 +325,9 @@ ggplot(data=ti.f %>% filter(treatment == "Infected"), aes(x=dpi, y=fever_change,
 ggplot(data=ti.f, aes(x=dpi, y=fever_change, color = groups))+
   geom_jitter(aes(shape=treatment), size=1, width = 0.15)+
   geom_line(aes(x=dpi, y=fever_change, linetype=treatment, group=(band_number)), alpha=0.5, size=0.5)+
+  geom_hline(yintercept = 0, alpha=0.5, linetype="dashed")+
   stat_summary(aes(group=groups, linetype=treatment), fun=mean, geom="line", alpha=1, size=1)+
-  stat_summary(aes(group=groups, linetype=treatment), fun=mean, geom="line", color="black", alpha=1, size=.5)+
+  #stat_summary(aes(group=groups, linetype=treatment), fun=mean, geom="line", color="black", alpha=1, size=.5)+
   stat_summary(aes(group=groups), fun=mean,
                fun.min = function(x) mean(x)-sd(x),
                fun.max = function(x) mean(x)+sd(x),
@@ -730,3 +732,4 @@ anim_dens<- ggplot(f.ti, aes(x=fever_change, fill=groups))+
   #animate(anim_dens, renderer = gifski_renderer())
   #anim_save("/Users/jesse/Documents/Virginia Tech/Research/Temp + Immunity 2022/Animated Plots/fever_score_dens.gif",
   #          animation = last_animation(), renderer = gifski_renderer(), format = "gif")
+

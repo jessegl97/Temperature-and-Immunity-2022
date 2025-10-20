@@ -1,3 +1,4 @@
+setwd('/Users/jesse/Documents/GitHub/Temperature-and-Immunity-2022/meanModels')
 ti <- read.csv("ti_merged_data.csv")
 
 #Add column for total eye score by adding l and r eye score
@@ -26,33 +27,9 @@ ti <- ti %>%
          ever_sick = ifelse(any(coalesce(sick, 0) == 1), 1,0))%>%
   ungroup()
 
-#Add column for fever score by finding average score
-ti <- ti %>%
-  group_by(bird_ID) %>%
-  mutate(fever_score=((((l_min + l_max)/2) + (r_min + r_max)/2)/2))
+#df with only pathogen load days
+ti.pl <- ti %>%
+  filter(!is.na(quantity))
 
 
-ti.f <- ti %>%
-  filter(!is.na(fever_score))
 
-ti.f <- ti.f %>%
-  filter(dpi !=24)
-
-#fever change = score - baseline
-ti.f <- ti.f %>%
-  group_by(band_number) %>%
-  mutate(fever_change = fever_score - first(fever_score))
-
-#fever change from previous score
-ti.f <- ti.f %>%
-  group_by(band_number) %>%
-  mutate(fever_diff = fever_score - lag(fever_score))
-
-ti.f %>%
-  dplyr::select(dpi, treatment, temp, groups)%>%
-  tbl_summary(
-    by="dpi"
-  )%>%
-  modify_header(
-    label ~ "**All Birds**"
-  )

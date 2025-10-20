@@ -1,0 +1,3 @@
+"","temp","treatment","mean_eye_score","median_eye_score","mean_bird_cv_eye_score","mean_bird_pv_eye_score","mean_bird_v2_eye_score","mean_cv_lower_ci_eye_score","mean_cv_upper_ci_eye_score","mean_pv_lower_ci_eye_score","mean_pv_upper_ci_eye_score","mean_v2_lower_ci_eye_score","mean_v2_upper_ci_eye_score"
+"1","Cold","Infected",0.965285714285714,0.001,1.36991188419492,0.594290154001628,0.652374456159174,0.830640757490512,2.53485803471178,0.36009791799109,0.658097585226116,0.40946244490817,0.839063985129883
+"2","Warm","Infected",1.10814285714286,1.001,1.04967939981305,0.645191038388873,0.524223413731837,0.624460665448278,1.65760059224392,0.450219511412599,0.677142289068759,0.28057125039298,0.738453944581702

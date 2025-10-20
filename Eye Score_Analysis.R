@@ -1,7 +1,7 @@
 #T+I 23 Eye Score Analysis
 rm(list=ls())
 ####read in + format data####
-# setwd('/Users/jesse/Documents/Virginia Tech/Research/Temp + Immunity 2022/RAW DATA/')
+setwd('/Users/jesse/Documents/Virginia Tech/Research/Temp + Immunity 2022/RAW DATA/')
 library(ggplot2)
 library(tidyverse)
 library(lme4)
@@ -68,7 +68,7 @@ ti.mg$dpi <- as.factor(ti.mg$dpi)
 
 lm1 <- glmmTMB(tes ~ temp + dpi + (1|band_number),
                data=ti.mg, 
-               family=poisson)
+               family=gaussian)
 
 summary(lm1)
 
@@ -104,7 +104,8 @@ bind_rows(AF1_lliks) %>%
 
 library(optimx)
 
-lm1 <- glmer(tes ~ temp*dpi + (1|band_number),
+
+lm1 <- glmer(tes ~ temp+dpi + (1|band_number),
                data=ti.mg.mod, 
              family = poisson,
              control = glmerControl(optimizer ='optimx', optCtrl=list(method='L-BFGS-B')))
@@ -550,8 +551,8 @@ ti %>%
 
 
 g.e.change <- ggplot(data=ti.mg, aes(x=as.factor(dpi), y=total_eye_score), color = temp, groups = band_number)+
-  geom_jitter(aes(color=temp),size=0.4, width=0.1)+
-  geom_smooth(aes(group = band_number, color = temp), method="loess", se=FALSE, size=0.2, span=0.5, linetype="solid", alpha=0.25)+
+  geom_jitter(aes(color=temp),size=2, width=0.1, height=0, alpha=0.5)+
+  #geom_smooth(aes(group = band_number, color = temp), method="loess", se=FALSE, size=0.2, span=0.5, linetype="solid", alpha=0.25)+
   stat_summary(aes(group=temp, color=temp), fun=mean, geom="line", linetype="solid", alpha=1, size=1)+
   stat_summary(aes(color=temp),fun.y=mean,
                #fun.min = function(x) mean(x)-sd(x),
@@ -560,10 +561,27 @@ g.e.change <- ggplot(data=ti.mg, aes(x=as.factor(dpi), y=total_eye_score), color
                #fun.max = function(x) mean(x)+(sd(x)/mean(x)), #CV
                geom= "pointrange", size=1.5, shape="+")+
   labs(y = "Total Eye Score", x="Days Post Infection", shape= "Treatment Group", color="Treatment Group")+
-  scale_color_manual(values=c("blue","red"))+
-  facet_wrap(~temp)+
+  scale_color_manual(values=c("#518DB8","#D71D2D"))+
+  #facet_wrap(~temp)+
   theme_bw()
 g.e.change
+
+g.e.change.8 <- ggplot(data=ti.mg %>% filter(dpi %in% c( -12, 3, 7, 9, 14)), aes(x=as.factor(dpi), y=total_eye_score), color = temp, groups = band_number)+
+  geom_jitter(aes(color=temp),size=2, width=0.1, height=0, alpha=0.5)+
+  #geom_smooth(aes(group = band_number, color = temp), method="loess", se=FALSE, size=0.2, span=0.5, linetype="solid", alpha=0.25)+
+  stat_summary(aes(group=temp, color=temp), fun=mean, geom="line", linetype="solid", alpha=1, size=1)+
+  stat_summary(aes(color=temp),fun.y=mean,
+               #fun.min = function(x) mean(x)-sd(x),
+               #fun.max = function(x) mean(x)+sd(x),
+               #fun.min = function(x) mean(x)-(sd(x)/mean(x)), #CV
+               #fun.max = function(x) mean(x)+(sd(x)/mean(x)), #CV
+               geom= "pointrange", size=1.5, shape="+")+
+  labs(y = "Total Eye Score", x="Days Post Infection", shape= "Treatment Group", color="Treatment Group")+
+  scale_color_manual(values=c("#518DB8","#D71D2D"))+
+  #facet_wrap(~temp)+
+  theme_bw()
+g.e.change.8
+
 
 #for poster
 g.change <- ggplot(data=ti.mg %>% filter(dpi > 0), aes(x=dpi, y=total_eye_score), color = temp, groups = band_number)+

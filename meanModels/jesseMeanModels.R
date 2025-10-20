@@ -89,7 +89,7 @@ lm2og <- glmmTMB(fever_change ~ temp*treatment*dpi +
 
 BIC(lm2, lm2og) #AR1 covariance structure better; BIC less biased small sample sizes, AICc also works
 
-hist(residuals(lm2))
+hist(residuals(lm2og))
 plot(residuals(lm2), predict(lm2))
 car::Anova(lm2, type = "III")
 
@@ -107,6 +107,7 @@ summary(lm2)
 ##### Keep two-way interactions
 #look only at infected birds
 lm2a <- glmmTMB(fever_change ~ temp * dpi + ar1(dpi + 0|band_number), data=ti.f %>%filter(treatment=="Infected"))
+summary(lm2a)
 means <- as.data.frame(cld(emmeans(lm2a, pairwise ~ dpi:temp, adjust = "tukey")))
 
 ggplot(means, aes(x = dpi, y = emmean, color = temp))+
@@ -132,7 +133,7 @@ ggplot(ti.fMeans, aes(x = dpi, y = meanFevCh))+
   scale_fill_manual(values = c("#F4A460", "#9370DB"))+
   labs(y="Mean Fever Change", x= "Days Post Infection", color="Treatment")+
   theme_bw()+
-  facet_wrap(~temp)
+  facet_wrap(~temp, nrow=2)
 
 # Phagocytosis Assay
 
@@ -191,17 +192,35 @@ summary(lm1)
 
 means <- cld(emmeans(lm1, pairwise ~ dpi*temp, adjust = "tukey", type = "response"))
 
-ggplot(means, aes(x = dpi, y = response, color = fct_rev(temp)))+
+# Obtain estimated marginal means (emmeans) with pairwise comparisons
+emmeans_results <- emmeans(lm1, pairwise ~ dpi * temp, adjust = "tukey", type = "response")
+
+# Extract the 'emmeans' part and apply cld()
+means <- cld(emmeans_results$emmeans)
+
+# Convert to data frame if needed
+means_df <- as.data.frame(means)
+
+ggplot(means_df, aes(x = dpi, y = response, color = fct_rev(temp)))+
   geom_jitter(data = ti.mg, aes(x = dpi, y = tes), 
               width = 0.1, alpha = 0.5)+
   geom_errorbar(aes(ymin = asymp.LCL, ymax = asymp.UCL),     
                 width = 0.1)+
-  #stat_summary(data= ti.mg, aes(x=dpi, y=tes, group= temp), geom="line", fun = "mean")+
-  geom_line(aes(group = temp), linewidth = 1.2)+
+  stat_summary(data= ti.mg, aes(x=dpi, y=tes, group= temp), geom="line", fun = "mean")+
+  #geom_line(aes(group = temp), linewidth = 1.2)+
   geom_point(size = 3)+
-  theme_bw()+
+  theme_bw()#+
   facet_wrap(~temp)
 
+#model predictions
+newdata <- expand.grid(
+  temp = unique(ti.mg.mod$temp),
+  dpi = unique(ti.mg.mod$dpi),
+  band_number = unique(ti.mg.mod$band_number)
+)
+
+# Make predictions using the fitted model
+newdata$pred_tes <- predict(lm1, newdata = newdata, type = "response", re.form=NA)
 # Zoom In to Show DPI differences combine temps w/ error
 
 means2 <- cld(emmeans(lm1, pairwise ~ dpi, adjust = "tukey", type = "response"))
