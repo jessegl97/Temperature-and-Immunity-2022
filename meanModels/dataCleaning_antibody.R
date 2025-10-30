@@ -55,7 +55,7 @@ ti <- ti %>%
 
 ab.miss <- ti %>%
   filter(is.na(elisa_od)) %>%
-  select(dpi, band_number, treatment, temp, elisa_od, total_eye_score)
+  dplyr::select(dpi, band_number, treatment, temp, elisa_od, total_eye_score)
 
 ggplot(ab.miss, aes(x=dpi, y=total_eye_score))+
   geom_jitter(width=0)
