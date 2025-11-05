@@ -766,7 +766,6 @@ ggplot(summary_eye_score_tibble, aes(x = interaction(temp, dpi), color = temp)) 
   #coord_flip() +
   theme_minimal()
 
-
 #Write the summarized tibble to a CSV file
 #write.csv(summary_eye_score_tibble, "/Users/jesse/Documents/GitHub/Temperature-and-Immunity-2022/Variability/Eye_Score_Inoculated_Variability.csv")
 
