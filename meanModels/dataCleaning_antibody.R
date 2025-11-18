@@ -1,5 +1,14 @@
 ti <- read.csv("ti_merged_data.csv")
 
+ti %>%
+  dplyr::select(dpi, treatment, temp, groups)%>%
+  tbl_summary(
+    by="dpi"
+  )%>%
+  modify_header(
+    label ~ "**All Birds**"
+  )
+
 #combine dpi 9 and 10
 ti$dpi <- ifelse(ti$dpi %in% c(9, 10), "9", as.integer(ti$dpi))
 ti$dpi <- as.integer(ti$dpi)
@@ -45,6 +54,7 @@ Qinf <- ti %>%
 Qinf
 
 
+
 #remove birds that were seropositive dpi -28 from antibody analysis
 ti <- ti %>%
   filter(!band_number %in% c(2667, 2750))
@@ -55,12 +65,27 @@ ti <- ti %>%
 
 ab.miss <- ti %>%
   filter(is.na(elisa_od)) %>%
-  dplyr::select(dpi, band_number, treatment, temp, elisa_od, total_eye_score)
+  dplyr::select(dpi, band_number, treatment, temp, elisa_od, total_eye_score, groups)
+
+ab.miss %>%
+  dplyr::select(dpi, treatment, temp, groups)%>%
+  tbl_summary(
+    by="dpi"
+  )%>%
+  modify_header(
+    label ~ "**All Birds**"
+  )
+
 
 ggplot(ab.miss, aes(x=dpi, y=total_eye_score))+
-  geom_jitter(width=0)
+  geom_jitter(width=0.5, height=0)
 
+#remove any bird missing at least one elisa_od
+ti.rm <- ti %>%
+  filter(!band_number %in% c(unique(ab.miss$band_number)))
+
+unique(ti.rm$band_number)
 #Across all days post-infection (dpi 9 and 28)
-ti.pi <- ti %>%
-  filter(dpi > 0)
+ti.pi <- ti #%>%
+  #filter(dpi > 0)
 unique(ti.pi$dpi)

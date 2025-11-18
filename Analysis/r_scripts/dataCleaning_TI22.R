@@ -1,12 +1,12 @@
 #Create Merged Dataset for T+I 2022
 
-setwd('/Users/jesse/Documents/GitHub/Temperature-and-Immunity-2022/meanModels')
+setwd('/Users/jesse/Documents/GitHub/Temperature-and-Immunity-2022/Analysis/')
 library(ggplot2)
 library(tidyverse)
 library(tibble)
 library(gridExtra)
 library(gtsummary)
-ti <- read.csv("ti_merged_data.csv")
+ti <- read.csv("data_frames/TI22_merged_data.csv")
 
 #Add column for total eye score by adding l and r eye score
 ti <- ti %>%
@@ -28,7 +28,7 @@ ti_full <- ti
 colnames(ti_full)
 
 ti <- ti_full %>% 
-  dplyr::select(1:4, 6:52, 61:66, 73:77)
+  dplyr::select(1:4, 6:52, 61:70)
 
 colnames(ti)
 
@@ -50,7 +50,7 @@ ggplot(ti, aes(x=dpi, y=l_max+r_max, color=temp))+
 
 
 ti %>%
-  dplyr::select(dpi, treatment, temp, inf_temp)%>%
+  dplyr::select(dpi, treatment, temp, groups)%>%
   tbl_summary(
     by=dpi
   )%>%
@@ -66,7 +66,7 @@ unique(ti$dpi)
 ti$quantity
 #add infected and seropositivity thresholds
 ti.cont <- ti%>%
-  filter(treatment == "Sham")%>%
+  filter(treatment == "Control")%>%
   drop_na(quantity)
 
 ti.cont
@@ -98,9 +98,9 @@ ti <- ti %>%
 
 #identify seropositive birds from quarantine in dataset
 Qinf <- ti %>%
-  filter(dpi==-28)%>%
-  filter(elisa_od >=0.061)%>%
-  dplyr::select(band_number, elisa_od, groups, dpi)
+  dplyr::filter(band_number %in% c(2667, 2750)) %>%
+    #dpi=="-28" & elisa_od >=0.061)%>%
+  dplyr::select(band_number, elisa_od, groups, dpi, elisa_od)
 Qinf
 
 

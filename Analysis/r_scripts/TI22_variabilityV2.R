@@ -50,8 +50,8 @@ theme_set(
       axis.title.x = element_text(color = "black", size = 15),
       axis.text.x = element_text(color = "black", size = 15),
       legend.background = element_rect(linewidth = 0.25, linetype = "solid"),
-      legend.position = "top",
-      legend.direction = "horizontal",
+      legend.position = "right",
+      legend.direction = "vertical",
       legend.title = element_text(size=15),
       legend.text = element_text(size=15)
     )
@@ -127,6 +127,14 @@ ti.pi.clean <- ti.pi.clean %>%
     groups = str_trim(groups)
   )
 
+ti.pi.clean <- ti.pi.clean %>%
+  mutate(
+    groups = factor(groups,
+                    levels = c("Warm Control", 
+                               "Warm Inoculated", 
+                               "Cold Control", 
+                               "Cold Inoculated")))
+
 ti.pi.clean$groups
 # Variability analysis for elisa_od
 elisa_var <- ti.pi.clean %>%
@@ -181,8 +189,10 @@ summary_elisa_tibble <- elisa_var %>%
   )
 
 var.ab <- ggplot(summary_elisa_tibble, aes(x = groups, color = groups)) +
-  geom_point(aes(y = mean_bird_pv_elisa, shape = "PV"), size = 3, shape=16) +
-  geom_errorbar(aes(y = mean_bird_pv_elisa, ymin = mean_pv_lower_ci_elisa, ymax = mean_pv_upper_ci_elisa), width = 0.1) +
+  geom_errorbar(aes(y = mean_bird_pv_elisa, ymin = mean_pv_lower_ci_elisa, ymax = mean_pv_upper_ci_elisa), width = 0, color="black") +
+  geom_point(aes(y = mean_bird_pv_elisa, shape = "PV"), size = 3, shape=1, color="black", stroke=1.5) +
+  geom_point(aes(y = mean_bird_pv_elisa, shape = "PV"), size = 3, shape=16, alpha=1) +
+
   #geom_point(aes(y = mean_bird_cv_elisa, shape = "CV"), size = 2) +
   
   
@@ -195,10 +205,11 @@ var.ab <- ggplot(summary_elisa_tibble, aes(x = groups, color = groups)) +
   ) +
   scale_color_manual(values = c(treat_colors))+
   facet_wrap(~dpi)+
-  theme_bw()+
   theme(
     axis.text.x = element_text(angle = 45, hjust=1)
   )
+
+var.ab
 
 mean.ab <- ggplot(ti.pi.clean, aes(x = groups, y=elisa_od, color = groups)) +
   geom_boxplot(width=0.5, outlier.shape=3)+
@@ -330,8 +341,10 @@ summary_phago_tibble <- phago_var %>%
 
 # Plot variability for phago_score
 ggplot(summary_phago_tibble, aes(x = groups, color = groups)) +
+  geom_errorbar(aes(y = mean_bird_pv_phago, ymin = mean_pv_lower_ci_phago, ymax = mean_pv_upper_ci_phago), width = 0, color="black") +
   geom_point(aes(y = mean_bird_pv_phago), size = 3) +
-  geom_errorbar(aes(y = mean_bird_pv_phago, ymin = mean_pv_lower_ci_phago, ymax = mean_pv_upper_ci_phago), width = 0.05) +
+  geom_point(aes(y = mean_bird_pv_phago), size = 3, shape=1, stroke=1.5, color="black") +
+  
   # geom_point(aes(y = mean_bird_cv_phago, shape = "CV"), size = 2) +
   # geom_point(aes(y = mean_bird_v2_phago, shape = "V2"), size = 2) +
   
@@ -342,7 +355,10 @@ ggplot(summary_phago_tibble, aes(x = groups, color = groups)) +
     color = "Temperature",
     #title = "Variability in Phagocytosis"
   ) +
-  scale_color_manual(values = treat_colors) 
+  scale_color_manual(values = treat_colors) +
+  theme(
+    axis.text.x = element_text(angle=45, hjust=1)
+  )
   # scale_shape_manual(name = "Variability Metric",
   #                    values = c("PV" = 16, "CV" = 2, "V2" = 0)) +
   #coord_flip() +
@@ -525,9 +541,9 @@ ggplot(max_tes_var, aes(x = temp, y = pv_max_tes, color = temp)) +
   geom_point(size = 2.6) +
   scale_color_manual(values = temp_colors) +
   scale_y_continuous(limits = c(0,1))+
-  labs(x = "Group", y = "Variability in Max Eyescore (PV)", color="Temperature")
+  labs(x = "Group", y = "Variability in Max Eyescore (PV)", color="Temperature")+
        #title = "Variability of Peak Eye Score Across Birds") +
-  #theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 #Brown-Forsythe; are max eye scores equally variable across temperatures?
 bf_max_ex_temp <- leveneTest(max_tes ~ temp, data = ti.mg.m, center = median)
@@ -636,15 +652,15 @@ ggplot(summary_fever_tibble %>% filter(dpi != 3), aes(x = dpi, color = groups)) 
   theme(axis.text.x = element_text(angle = 90))
 
 
-#Variability in vever change (baseline to max)
+#Variability in fever change (baseline to max)
 ti.f <- ti.f %>%
   group_by(band_number)%>%
   mutate(fever_peak = max(fever_score),
          fever_high = max(fever_high = max(fever_score[dpi != 0])))
 
 ti.fc <- ti.f %>%
-  dplyr::select(band_number, treatment, temp, dpi, fever_score, fever_peak, mass) %>%
-  group_by(band_number, treatment, temp) %>%
+  dplyr::select(band_number, treatment, temp, dpi, fever_score, fever_peak, mass, sex) %>%
+  group_by(band_number, treatment, temp, sex) %>%
   summarise(
     baseline   = fever_score[dpi == 0],
     peak       = max(fever_score, na.rm = TRUE),
@@ -672,7 +688,8 @@ lvl <- c("Warm Control", "Warm Inoculated”, “Cold Control", "Cold Inoculated
 #     groups = str_trim(groups)
 #   )
 
-# Variability in fever_score over time
+# Variability in mag_high 
+  #Doesn't work right becuase there are negative numbers
 fever_c_var <- ti.fc.clean %>%
   group_by(group, temp, treatment) %>%
   dplyr::reframe(
@@ -685,21 +702,22 @@ fever_c_var <- ti.fc.clean %>%
     mag_high = mag_high,
     treatment = treatment,
     group = group,
+    fever_score = fever_score,
     
-    # Calculations for fever_score
-    mean_fever = mean(fever_score, na.rm = TRUE),
-    median_fever = median(fever_score, na.rm = TRUE),
-    bird_cv_fever = calculate_cv(fever_score),
-    bird_pv_fever = calculate_pv(fever_score),
-    bird_v2_fever = calculate_v2(fever_score),
+    # Calculations for mag_high
+    mean_fever = mean(mag_high, na.rm = TRUE),
+    median_fever = median(mag_high, na.rm = TRUE),
+    bird_cv_fever = calculate_cv(mag_high),
+    bird_pv_fever = calculate_pv(mag_high),
+    bird_v2_fever = calculate_v2(mag_high),
     
-    # Bootstrapping for fever_score
-    cv_bootstrap_fever = list(replicate(n_boot, calculate_cv(sample(fever_score, replace = TRUE)))),
-    pv_bootstrap_fever = list(replicate(n_boot, calculate_pv(sample(fever_score, replace = TRUE)))),
-    v2_bootstrap_fever = list(replicate(n_boot, calculate_v2(sample(fever_score, replace = TRUE))))
+    # Bootstrapping for mag_high
+    cv_bootstrap_fever = list(replicate(n_boot, calculate_cv(sample(mag_high, replace = TRUE)))),
+    pv_bootstrap_fever = list(replicate(n_boot, calculate_pv(sample(mag_high, replace = TRUE)))),
+    v2_bootstrap_fever = list(replicate(n_boot, calculate_v2(sample(mag_high, replace = TRUE))))
   ) %>%
   mutate(
-    # Confidence intervals for fever_score
+    # Confidence intervals for mag_high
     cv_lower_ci_fever = map_dbl(cv_bootstrap_fever, ~ quantile(.x, 0.025, na.rm = TRUE)),
     cv_upper_ci_fever = map_dbl(cv_bootstrap_fever, ~ quantile(.x, 0.975, na.rm = TRUE)),
     pv_lower_ci_fever = map_dbl(pv_bootstrap_fever, ~ quantile(.x, 0.025, na.rm = TRUE)),
@@ -725,21 +743,21 @@ fever_var_summary <- ti.fc.clean %>%
     ),
     
     # Bootstrapping for each variable + metric
-    baseline_cv_boot = list(replicate(n_boot, calculate_cv(sample(baseline, replace = TRUE)))),
-    baseline_pv_boot = list(replicate(n_boot, calculate_pv(sample(baseline, replace = TRUE)))),
-    baseline_v2_boot = list(replicate(n_boot, calculate_v2(sample(baseline, replace = TRUE)))),
-    
-    peak_cv_boot = list(replicate(n_boot, calculate_cv(sample(peak, replace = TRUE)))),
-    peak_pv_boot = list(replicate(n_boot, calculate_pv(sample(peak, replace = TRUE)))),
-    peak_v2_boot = list(replicate(n_boot, calculate_v2(sample(peak, replace = TRUE)))),
-    
-    high_cv_boot = list(replicate(n_boot, calculate_cv(sample(high, replace = TRUE)))),
-    high_pv_boot = list(replicate(n_boot, calculate_pv(sample(high, replace = TRUE)))),
-    high_v2_boot = list(replicate(n_boot, calculate_v2(sample(high, replace = TRUE)))),
-    
-    magnitude_cv_boot = list(replicate(n_boot, calculate_cv(sample(magnitude, replace = TRUE)))),
-    magnitude_pv_boot = list(replicate(n_boot, calculate_pv(sample(magnitude, replace = TRUE)))),
-    magnitude_v2_boot = list(replicate(n_boot, calculate_v2(sample(magnitude, replace = TRUE)))),
+    # baseline_cv_boot = list(replicate(n_boot, calculate_cv(sample(baseline, replace = TRUE)))),
+    # baseline_pv_boot = list(replicate(n_boot, calculate_pv(sample(baseline, replace = TRUE)))),
+    # baseline_v2_boot = list(replicate(n_boot, calculate_v2(sample(baseline, replace = TRUE)))),
+    # 
+    # peak_cv_boot = list(replicate(n_boot, calculate_cv(sample(peak, replace = TRUE)))),
+    # peak_pv_boot = list(replicate(n_boot, calculate_pv(sample(peak, replace = TRUE)))),
+    # peak_v2_boot = list(replicate(n_boot, calculate_v2(sample(peak, replace = TRUE)))),
+    # 
+    # high_cv_boot = list(replicate(n_boot, calculate_cv(sample(high, replace = TRUE)))),
+    # high_pv_boot = list(replicate(n_boot, calculate_pv(sample(high, replace = TRUE)))),
+    # high_v2_boot = list(replicate(n_boot, calculate_v2(sample(high, replace = TRUE)))),
+    # 
+    # magnitude_cv_boot = list(replicate(n_boot, calculate_cv(sample(magnitude, replace = TRUE)))),
+    # magnitude_pv_boot = list(replicate(n_boot, calculate_pv(sample(magnitude, replace = TRUE)))),
+    # magnitude_v2_boot = list(replicate(n_boot, calculate_v2(sample(magnitude, replace = TRUE)))),
     
     mag_high_cv_boot = list(replicate(n_boot, calculate_cv(sample(mag_high, replace = TRUE)))),
     mag_high_pv_boot = list(replicate(n_boot, calculate_pv(sample(mag_high, replace = TRUE)))),
@@ -772,13 +790,13 @@ fever_var_summary <- ti.fc.clean %>%
       .names = "{.col}_{.fn}"
     )
   ) %>%
-  select(-ends_with("_boot")) %>%
+  dplyr::select(-ends_with("_boot")) %>%
   ungroup()
 
 ggplot(fever_var_summary, aes(x = group, color = group)) +
-  geom_point(aes(y = baseline_pv, shape = "PV"), size = 2, position=position_dodge(width=2)) +
-  geom_errorbar(aes(y = mean_bird_pv_fever, ymin = mean_pv_lower_ci_fever, ymax = mean_pv_upper_ci_fever), width = 0.5, position=position_dodge(width=2)) +
-  geom_point(aes(y = mean_bird_cv_fever, shape = "CV"), size = 2, position=position_dodge(width=2)) +
+  geom_point(aes(y = mag_high_pv, shape = "PV"), size = 2, position=position_dodge(width=2)) +
+  geom_errorbar(aes(y = mag_high_pv, ymin = mag_high_pv_boot_lower, ymax = mag_high_pv_boot_upper), width = 0.5, position=position_dodge(width=2)) +
+  #geom_point(aes(y = mean_bird_cv_fever, shape = "CV"), size = 2, position=position_dodge(width=2)) +
   #geom_point(aes(y = mean_bird_v2_fever, shape = "V2"), size = 2) +
   
   labs(
@@ -786,7 +804,7 @@ ggplot(fever_var_summary, aes(x = group, color = group)) +
     x = "Temperature",
     shape = "Metric Type",
     color = "Temperature",
-    title = "Variability in Fever Score"
+    title = "Variability in Magnitude of Fever Change"
   ) +
   scale_color_manual(values = treat_colors) +
   scale_shape_manual(name = "Variability Metric",
@@ -796,25 +814,155 @@ ggplot(fever_var_summary, aes(x = group, color = group)) +
   facet_wrap(~fct_rev(treatment), ncol=2)+
   theme(axis.text.x = element_text(angle = 90))
 
-library(forcats)
-pv_long <- fever_var_summary %>%
-  select(group, temp, treatment,
-         baseline_pv, baseline_pv_boot_lower, baseline_pv_boot_upper,
-         high_pv,     high_pv_boot_lower,     high_pv_boot_upper,
-         mag_high_pv, mag_high_pv_boot_lower, mag_high_pv_boot_upper) %>%
-  mutate(group = fct_inorder(group)) %>%
-  pivot_longer(
-    cols = c(baseline_pv, baseline_pv_boot_lower, baseline_pv_boot_upper,
-             high_pv,     high_pv_boot_lower,     high_pv_boot_upper,
-             mag_high_pv, mag_high_pv_boot_lower, mag_high_pv_boot_upper),
-    names_to   = c("phase", ".value"),
-    names_pattern = "^(baseline|high|mag_high)_(pv|pv_boot_lower|pv_boot_upper)$"
+
+# fever_c_var <- ti.fc.clean %>%
+#   group_by(group, temp, treatment) %>%
+#   dplyr::reframe(
+#     temp = temp,
+#     band_number = band_number,
+#     baseline = baseline,
+#     peak = peak,
+#     high = high,
+#     magnitude = magnitude,
+#     mag_high = mag_high,
+#     treatment = treatment,
+#     group = group,
+#     fever_score = fever_score,
+#     
+#     # Calculations for mag_high
+#     mean_fever = mean(mag_high, na.rm = TRUE),
+#     median_fever = median(mag_high, na.rm = TRUE),
+#     bird_cv_fever = calculate_cv(mag_high),
+#     bird_pv_fever = calculate_pv(mag_high),
+#     bird_v2_fever = calculate_v2(mag_high),
+#     
+#     # Bootstrapping for mag_high
+#     cv_bootstrap_fever = list(replicate(n_boot, calculate_cv(sample(mag_high, replace = TRUE)))),
+#     pv_bootstrap_fever = list(replicate(n_boot, calculate_pv(sample(mag_high, replace = TRUE)))),
+#     v2_bootstrap_fever = list(replicate(n_boot, calculate_v2(sample(mag_high, replace = TRUE))))
+#   ) %>%
+#   mutate(
+#     # Confidence intervals for mag_high
+#     cv_lower_ci_fever = map_dbl(cv_bootstrap_fever, ~ quantile(.x, 0.025, na.rm = TRUE)),
+#     cv_upper_ci_fever = map_dbl(cv_bootstrap_fever, ~ quantile(.x, 0.975, na.rm = TRUE)),
+#     pv_lower_ci_fever = map_dbl(pv_bootstrap_fever, ~ quantile(.x, 0.025, na.rm = TRUE)),
+#     pv_upper_ci_fever = map_dbl(pv_bootstrap_fever, ~ quantile(.x, 0.975, na.rm = TRUE)),
+#     v2_lower_ci_fever = map_dbl(v2_bootstrap_fever, ~ quantile(.x, 0.025, na.rm = TRUE)),
+#     v2_upper_ci_fever = map_dbl(v2_bootstrap_fever, ~ quantile(.x, 0.975, na.rm = TRUE))
+#   ) %>%
+#   dplyr::select(-cv_bootstrap_fever, -pv_bootstrap_fever, -v2_bootstrap_fever) %>%
+#   ungroup()
+
+ti.f <- ti.f %>%
+  dplyr::mutate(sex = dplyr::recode(sex,
+                                    "M" = "Male",
+                                    "F" = "Female"))
+ti.f <- ti.f %>%
+  dplyr::mutate(groups = dplyr::recode(groups,
+                                       "Cold Control" = "Cold Control",
+                                       "Cold Infected" = "Cold Inoculated",
+                                       "Warm Control" = "Warm Control",
+                                       "Warm Infected" = "Warm Inoculated"))
+
+fever_var <- ti.f %>%
+  group_by(dpi, temp, treatment, groups, sex) %>%
+  filter(dpi %in% c(-0, 3, 7, 14, 18, 24, 28, 35))%>%
+  dplyr::reframe(
+    dpi = dpi,
+    temp = temp,
+    treatment = treatment,
+    sex = sex,
+    band_number = band_number,
+    fever_score = fever_score,
+    
+    # Calculations for total_eye_score
+    mean_fever = mean(fever_score, na.rm = TRUE),
+    median_fever = median(fever_score, na.rm = TRUE),
+    bird_cv_fever = calculate_cv(fever_score),
+    bird_pv_fever = calculate_pv(fever_score),
+    #bird_v2_fever = calculate_v2(fever_score),
+    
+    # Bootstrapping for total_eye_score
+    cv_bootstrap_fever = list(replicate(n_boot, calculate_cv(sample(fever_score, replace = TRUE)))),
+    pv_bootstrap_fever = list(replicate(n_boot, calculate_pv(sample(fever_score, replace = TRUE)))),
+    v2_bootstrap_fever = list(replicate(n_boot, calculate_v2(sample(fever_score, replace = TRUE))))
   ) %>%
-  rename(
-    pv          = pv,
-    pv_lower_ci = pv_boot_lower,
-    pv_upper_ci = pv_boot_upper
-  ) 
+  mutate(
+    # Confidence intervals for total_eye_score
+    cv_lower_ci_fever = map_dbl(cv_bootstrap_fever, ~ quantile(.x, 0.025, na.rm = TRUE)),
+    cv_upper_ci_fever = map_dbl(cv_bootstrap_fever, ~ quantile(.x, 0.975, na.rm = TRUE)),
+    pv_lower_ci_fever = map_dbl(pv_bootstrap_fever, ~ quantile(.x, 0.025, na.rm = TRUE)),
+    pv_upper_ci_fever = map_dbl(pv_bootstrap_fever, ~ quantile(.x, 0.975, na.rm = TRUE)),
+    v2_lower_ci_fever = map_dbl(v2_bootstrap_fever, ~ quantile(.x, 0.025, na.rm = TRUE)),
+    v2_upper_ci_fever = map_dbl(v2_bootstrap_fever, ~ quantile(.x, 0.975, na.rm = TRUE))
+  ) %>%
+  dplyr::select(-cv_bootstrap_fever, -pv_bootstrap_fever, -v2_bootstrap_fever) %>%
+  ungroup()
+
+# Summary statistics for total_eye_score
+summary_fever_tibble <- fever_var %>%
+  group_by(dpi, temp, treatment, groups, sex) %>%
+  dplyr::reframe(
+    mean_fever = mean(mean_fever, na.rm = TRUE),
+    median_fever = mean(median_fever, na.rm = TRUE),
+    mean_bird_cv_fever = mean(bird_cv_fever, na.rm = TRUE),
+    mean_bird_pv_fever = mean(bird_pv_fever, na.rm = TRUE),
+    #mean_bird_v2_fever = mean(bird_v2_fever, na.rm = TRUE),
+    mean_cv_lower_ci_fever = mean(cv_lower_ci_fever, na.rm = TRUE),
+    mean_cv_upper_ci_fever = mean(cv_upper_ci_fever, na.rm = TRUE),
+    mean_pv_lower_ci_fever = mean(pv_lower_ci_fever, na.rm = TRUE),
+    mean_pv_upper_ci_fever = mean(pv_upper_ci_fever, na.rm = TRUE),
+    #mean_v2_lower_ci_fever = mean(v2_lower_ci_fever, na.rm = TRUE),
+    #mean_v2_upper_ci_fever = mean(v2_upper_ci_fever, na.rm = TRUE)
+  )
+
+# Plot variability for total_eye_score
+dodge = position_dodge(width=2)
+
+ggplot(summary_fever_tibble, aes(x = dpi, color = groups)) +
+  geom_point(aes(y = mean_bird_pv_fever, color=groups), size = 2, position = dodge) +
+  geom_errorbar(aes(y = mean_bird_pv_fever, ymin = mean_pv_lower_ci_fever, ymax = mean_pv_upper_ci_fever, color=groups), 
+                width = 0.1, position = dodge) +
+   #geom_point(aes(y = mean_bird_cv_fever, shape = "CV"), size = 2, shape=1) +
+  # geom_point(aes(y = mean_bird_v2_eye_score, shape = "V2"), size = 2) +
+  
+  labs(
+    y = "Variability in Fever Score (PV)",
+    x = "Days Post-Inoculation",
+    shape = "Metric Type",
+    color = "Temperature",
+    #title = "Variability in Total Eye Score by DPI and Temperature"
+  ) +
+  #scale_y_continuous(limits=c(0,1))+
+  scale_color_manual(values = treat_colors) +
+  facet_grid(~fct_rev(temp)~sex)+
+  theme(strip.text = element_text(size=12))
+# scale_shape_manual(name = "Variability Metric",
+#                    values = c("PV" = 16, "CV" = 2, "V2" = 0)) +
+#facet_wrap(~groups)
+
+leveneTest(fever_score ~ treatment, data=ti.f, center=median)
+leveneTest(fever_score ~ temp, data=ti.f, center=median)
+leveneTest(fever_score ~ sex, data=ti.f, center=median)
+
+#
+leveneTest(fever_score ~ sex, data=ti.f %>% filter(treatment == "Inoculated"), center=median)
+leveneTest(fever_score ~ sex, data=ti.f %>% filter(treatment == "Sham"), center=median)
+
+ggplot(ti.f, aes(x= sex, y=fever_score, color= treatment))+
+  geom_jitter(width=0.2)+
+  #scale_color_manual(values=treat_colors)+
+  facet_grid(~treatment)+
+  theme(axis.text.x = element_text(angle=45, hjust=1))+
+  labs(x="Treatment Groups", y="Fever Score (All Days Combined B-H Test)", color="Treatment Groups")
+
+leveneTest(fever_score ~ groups, data=ti.f, center=median)
 
 
+ggplot(ti.f, aes(x= groups, y=fever_score, color= groups))+
+  geom_jitter(width=0.2)+
+  scale_color_manual(values=treat_colors)+
+  facet_grid(~sex~treatment)+
+  theme(axis.text.x = element_text(angle=45, hjust=1))+
+  labs(x="Treatment Groups", y="Fever Score (All Days Combined B-H Test)", color="Treatment Groups")
 
