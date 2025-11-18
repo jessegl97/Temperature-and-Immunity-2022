@@ -10,32 +10,11 @@ Birds were sampled over the course of infection. See temp_immunity_data_dictiona
 
 ##DATA FILES##
 ---------------------------------
-*Where available, .Rmd scipts are most up to date*
+Data_Formatting_TI22.R > Stored locally
+In this script, I combine my individual .csv documents into one document for all analyses: TI22_merged_data.csv
 
-Data_Formatting_TI22.Rmd
-In this script, I combine my individual .csv documents into one document for all analyses: ti_merged_data.csv
+Various dataCleaning_x documents prep analyses for each bioassay
 
-Antibody_Analysis.R
-Preliminary analysis of antibody levels
+TI22_AnalysisV2.R is living analysis document.
 
-Eye Score_Analysis.R
-Preliminary analysis of eye score
-
-Haptoglobin_Analysis.R
-Preliminary analysis of haptoglobin levels. I will likely not use this because of fatal errors in the assay.
-
-Phagocytosis_Analysis.R
-Preliminary analysis of phagocytosis assay
-
-Phagocytosis_Analysis.Rmd
-Analysis of phagocytosis assay - most up to date
-
-Fever_Analysis.R
-Preliminary analysis of fever assay
-
-Fever_Analysis.Rmd
-Analysis of fever assay - working on this
-
-Mass_Analysis.R
-Preliminary analysis of mass data
-
+TI22_variabilityV2.R is living analysis document.
