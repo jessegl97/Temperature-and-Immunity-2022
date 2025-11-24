@@ -5,7 +5,7 @@
 
 rm(list=ls())
 ####read in + format data####
-setwd('/Users/jesse/Documents/GitHub/Temperature-and-Immunity-2022/meanModels')
+setwd('/Users/jesse/Documents/GitHub/Temperature-and-Immunity-2022/Analysis/')
 
 #Automatically install & load if missing
 #install.packages("pacman")
@@ -59,85 +59,48 @@ theme_set(
 
 
 #Import Variability Functions:
-source("Variability_Functions.R")
+source("r_scripts/Variability_Functions.R")
 
 n_boot <- 1000
 
 ####Antibodies####
-source("dataCleaning_antibody.R")
-
-unique(ti.pi$dpi)
-ti.pi$dpi <- as.factor(ti.pi$dpi)
-
-#Set reference categories "Warm" and "Sham"
-ti.pi$temp <- relevel(as.factor(ti.pi$temp), ref = "Warm")
-ti.pi$treatment <- relevel(as.factor(ti.pi$treatment), ref = "Sham")
-
-#omit seropositve birds from quarantine
-unique(Qinf$band_number)
-
-ti.pi <- ti.pi %>%
-  filter(!band_number %in% c(2667, 2750))
-
-ti.pi %>%
-  filter(dpi ==28)%>%
-  dplyr::select(treatment, temp, inf_temp)%>%
+source("r_scripts/dataCleaning_antibody.R")
+ti %>%
+  dplyr::select(dpi, treatment, temp, groups)%>%
   tbl_summary(
+    by="dpi"
   )%>%
   modify_header(
     label ~ "**All Birds**"
   )
 
-#missing elisa data from 10 samples:
-#DPI 9: 2684, 2893, 2632, 2842, 2847
-#DPI 28: 2684, 2893, 2846, 2869, 2926
+unique(ti.ab$band_number)
 
-#2926 only on dpi 9; missing 28
-ti.pi %>%
-  filter(elisa_od>0.08) %>%
-  dplyr::select(dpi, elisa_od, band_number, treatment)
-
-ti.pi.full <- ti.pi
-
-ti.pi <- ti.pi %>%
-  filter(band_number != 2926)
-
-# Remove rows with NA values in elisa_od
-ti.pi.clean <- ti.pi %>%
-  filter(!is.na(elisa_od))
-
-ggplot(ti.pi.clean, aes(x=dpi, y=elisa_od, color=temp))+
-  geom_point()
-
-ti.pi.clean.count <- ti.pi.clean %>%
-  group_by(dpi, temp, treatment)%>%
-  summarise(n = length(elisa_od))
-
-ti.pi.clean <- ti.pi.clean %>%
-  mutate(
-    temp      = factor(str_trim(as.character(temp))),
-    treatment = factor(str_trim(as.character(treatment)))
+#Antibody analysis sample sizes; see dataCleaning_antibody.R for removal breakdown
+ti.ab %>%
+  dplyr::select(dpi, treatment, temp, groups)%>%
+  tbl_summary(
+    by="dpi"
+  )%>%
+  modify_header(
+    label ~ "**Birds for Antibodies**"
   )
 
-lvl <- c("Warm Control", "Warm Inoculated”, “Cold Control", "Cold Inoculated")
+ti.ab <- ti.ab %>% 
+  mutate(groups = factor(groups,
+                levels = c("Warm Control", "Warm Inoculated",
+                           "Cold Control", "Cold Inoculated")))
 
-ti.pi.clean <- ti.pi.clean %>%
-  mutate(
-    groups = paste(temp, ifelse(treatment == "Inoculated", "Inoculated", "Control")),
-    groups = str_trim(groups)
-  )
+unique(ti.ab$dpi)
+ti.ab$dpi <- as.factor(ti.ab$dpi)
 
-ti.pi.clean <- ti.pi.clean %>%
-  mutate(
-    groups = factor(groups,
-                    levels = c("Warm Control", 
-                               "Warm Inoculated", 
-                               "Cold Control", 
-                               "Cold Inoculated")))
+#Set reference categories "Warm" and "Sham"
+ti.ab$temp <- relevel(as.factor(ti.ab$temp), ref = "Warm")
+ti.ab$treatment <- relevel(as.factor(ti.ab$treatment), ref = "Control")
+ti.ab$dpi.f <- as.factor(ti.ab$dpi)
 
-ti.pi.clean$groups
 # Variability analysis for elisa_od
-elisa_var <- ti.pi.clean %>%
+elisa_var <- ti.ab %>%
   group_by(dpi, groups) %>%
   dplyr::reframe(
     temp = temp,
@@ -188,12 +151,14 @@ summary_elisa_tibble <- elisa_var %>%
     n_individuals = n_distinct(band_number) #calculate number of individuals in each group
   )
 
-var.ab <- ggplot(summary_elisa_tibble, aes(x = groups, color = groups)) +
-  geom_errorbar(aes(y = mean_bird_pv_elisa, ymin = mean_pv_lower_ci_elisa, ymax = mean_pv_upper_ci_elisa), width = 0, color="black") +
-  geom_point(aes(y = mean_bird_pv_elisa, shape = "PV"), size = 3, shape=1, color="black", stroke=1.5) +
-  geom_point(aes(y = mean_bird_pv_elisa, shape = "PV"), size = 3, shape=16, alpha=1) +
+dodge <- position_dodge(width=0.75)
 
-  #geom_point(aes(y = mean_bird_cv_elisa, shape = "CV"), size = 2) +
+var.ab <- ggplot(summary_elisa_tibble, aes(x = groups, color = groups)) +
+  geom_errorbar(aes(y = mean_bird_pv_elisa, ymin = mean_pv_lower_ci_elisa, ymax = mean_pv_upper_ci_elisa, group = dpi), width = 0, color="black", position=dodge) +
+  geom_point(aes(y = mean_bird_pv_elisa, shape = "PV", group = dpi), size = 3, shape=1, color="black", stroke=1.5, position=dodge) +
+  geom_point(aes(y = mean_bird_pv_elisa, shape = "PV", group = dpi, alpha=dpi), size = 3, shape=16, position=dodge) +
+
+  #geom_point(aes(y = mean_bird_cv_elisa, shape = "CV", group=dpi), size = 2, position = dodge) +
   
   
   labs(
@@ -204,14 +169,36 @@ var.ab <- ggplot(summary_elisa_tibble, aes(x = groups, color = groups)) +
     #title = "Variability in Antibody Levels"
   ) +
   scale_color_manual(values = c(treat_colors))+
-  facet_wrap(~dpi)+
+  scale_alpha_manual(values = c(0.5, 0.75, 1))+
   theme(
     axis.text.x = element_text(angle = 45, hjust=1)
   )
 
 var.ab
 
-mean.ab <- ggplot(ti.pi.clean, aes(x = groups, y=elisa_od, color = groups)) +
+
+ggplot(summary_elisa_tibble, aes(x = groups, color = groups, shape=dpi)) +
+  geom_errorbar(aes(y = mean_bird_pv_elisa, ymin = mean_pv_lower_ci_elisa, ymax = mean_pv_upper_ci_elisa, group = dpi), width = 0, color="black", position=dodge) +
+  geom_point(aes(y = mean_bird_pv_elisa, group = dpi), size = 4, color="black", stroke=1, position=dodge) +
+  geom_point(aes(y = mean_bird_pv_elisa, group = dpi), size = 3, position=dodge) +
+  
+  #geom_point(aes(y = mean_bird_cv_elisa, shape = "CV", group=dpi), size = 2, position = dodge) +
+  
+  
+  labs(
+    y = "Variability (PV)",
+    x = "Temperature",
+    shape = "Metric Type",
+    color = "Temperature",
+    #title = "Variability in Antibody Levels"
+  ) +
+  scale_color_manual(values = c(treat_colors))+
+  scale_shape_manual(values = c(1, 17, 16))+
+  theme(
+    axis.text.x = element_text(angle = 45, hjust=1)
+  )
+
+mean.ab <- ggplot(ti.ab, aes(x = groups, y=elisa_od, color = groups)) +
   geom_boxplot(width=0.5, outlier.shape=3)+
   geom_jitter(size = 2, width=0.25, alpha=0.5) +
 
@@ -232,11 +219,11 @@ mean.ab <- ggplot(ti.pi.clean, aes(x = groups, y=elisa_od, color = groups)) +
 var.ab + theme(legend.position = "none")+
   mean.ab
 
-ti.pi.clean$groups <- as.factor(ti.pi.clean$groups)
+ti.ab$groups <- as.factor(ti.ab$groups)
 #Brown-Forsythe; are antibody levels equally variable across treatments?
-bf_ab_treat <- leveneTest(elisa_od ~ treatment, data = ti.pi.clean %>% filter(dpi == 28), center = median)
-bf_ab_temp <- leveneTest(elisa_od ~ temp, data = ti.pi.clean %>% filter(dpi == 28), center = median)
-bf_ab_groups <- leveneTest(elisa_od ~ groups, data = ti.pi.clean %>% filter(dpi == 28), center = median)
+bf_ab_treat <- leveneTest(elisa_od ~ treatment, data = ti.ab %>% filter(dpi == 28), center = median)
+bf_ab_temp <- leveneTest(elisa_od ~ temp, data = ti.ab %>% filter(dpi == 28), center = median)
+bf_ab_groups <- leveneTest(elisa_od ~ groups, data = ti.ab %>% filter(dpi == 28), center = median)
 
 
 # coerce to data frames with a term column
@@ -257,7 +244,7 @@ df_treat$dpi <- df_temp$dpi <- df_groups$dpi <- "28"
 #     by_temp      = df_temp,
 #     by_groups    = df_groups
 #   ),
-#   path = "/Users/jesse/Documents/GitHub/Temperature-and-Immunity-2022/Results/Variability/bf_elisa_dpi28.xlsx"
+#   path = "/Users/jesse/Documents/GitHub/Temperature-and-Immunity-2022/Analysis/Results/Variability/bf_elisa_dpi28.xlsx"
 # )
 
 ####Phagocytosis####
