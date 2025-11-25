@@ -1,5 +1,5 @@
-setwd('/Users/jesse/Documents/GitHub/Temperature-and-Immunity-2022/meanModels')
-ti <- read.csv("ti_merged_data.csv")
+setwd('/Users/jesse/Documents/GitHub/Temperature-and-Immunity-2022/Analysis/')
+ti <- read.csv("data_frames/TI22_merged_data.csv")
 
 #Add column for total eye score by adding l and r eye score
 ti <- ti %>%

@@ -574,7 +574,6 @@ source("r_scripts/dataCleaning_fever.R")
 #fever_change = score - baseline
 #fever_diff = change from previous score
 
-#Look only at baseline versus peak fever score. This simplifies models a ton and still looks at magnitude of response
 ti.f$dpi <- as.factor(ti.f$dpi)
 
 ggplot(ti.f, aes(x=dpi, y=fever_score, color=groups))+
@@ -588,10 +587,375 @@ ti.f <- ti.f %>%
   mutate(fever_peak = max(fever_score),
          fever_high = max(fever_high = max(fever_score[dpi != 0])))
 
-ti.f$fever_peak  
+ti.f$dpi.f <- as.factor(ti.f$dpi)
 
+
+#####Fever 1) Do kinetics of fever response differ between temperature, treatment, or sex?####
+
+##Fever by dpi##
+ggplot(ti.f, aes(x=dpi, y=fever_score, color=groups))+
+  geom_point()
+
+ti.f$dpi.f <- as.factor(ti.f$dpi)
+ti.f$temp <- relevel(as.factor(ti.f$temp), ref = "Warm")
+ti.f$treatment <- relevel(as.factor(ti.f$treatment), ref = "Control")
+
+#did fever differ between treatments at baseline?
+t.test(fever_score ~ treatment, data=ti.f %>% filter(dpi.f == 0))
+
+#did temperature differ between sexes between the rooms at baseline?
+#model selection: Does sex predict body temperature when controlling for room temperature?
+ti.f.cont <- ti.f %>%
+  filter(treatment == "Control")
+c1 <- glmmTMB(fever_score ~ temp + sex + dpi.f + (1|band_number), data=ti.f.cont)
+c2 <- glmmTMB(fever_score ~ temp + sex * dpi.f + (1|band_number), data=ti.f.cont)
+c3 <- glmmTMB(fever_score ~ temp * sex + dpi.f + (1|band_number), data=ti.f.cont)
+c4 <- glmmTMB(fever_score ~ temp * sex * dpi.f + (1|band_number), data=ti.f.cont)
+c5 <- glmmTMB(fever_score ~ temp + dpi.f + (1|band_number), data=ti.f.cont)
+c6 <- glmmTMB(fever_score ~ sex + dpi.f + (1|band_number), data=ti.f.cont)
+null_fc <- glmmTMB(fever_score ~ 1 + (1|band_number), data=ti.f.cont)
+
+aictab(list(c1, c2, c3, c4, c5, c6, null_fc),
+       modnames = c("c1","c2","c3","c4","c5","c6","null"))
+
+#So it isn't actually a sex effect
+summary(c1)
+
+#It's sex and infection
+lm.ts <- glmmTMB(fever_score ~ temp + treatment + sex + dpi.f + (1|band_number), data=ti.f)
+simulateResiduals(lm.ts, plot=T)
+summary(lm.ts)
+plot(allEffects(lm.ts))
+car::Anova(lm.ts, type="III")
+
+#Model Selection
+#because sampled_first is a function of dpi (it is fixed for each dpi), it is collinear with dpi.f, so do not include.
+#We treat dpi as a factor (dpi.f) because this is a linear model therefore we must look only at linear differences
+#between dpis (no smoothing)
+
+#I want to know whether treatment or temperature affect fever_score or shape of fever response
+#while accounting for sex
+m0 <- glmmTMB(fever_score ~ temp + treatment + sex + dpi.f + (1|band_number), data = ti.f)
+m1 <- glmmTMB(fever_score ~ temp * treatment + sex + dpi.f + (1|band_number), data = ti.f)
+m2 <- glmmTMB(fever_score ~ temp * dpi.f + treatment + sex + (1|band_number), data = ti.f)
+m3 <- glmmTMB(fever_score ~ treatment * dpi.f + temp + sex + (1|band_number), data = ti.f)
+m4 <- glmmTMB(fever_score ~ temp * treatment * dpi.f + sex + (1|band_number), data = ti.f)
+m5 <- glmmTMB(fever_score ~ temp * treatment * dpi.f * sex + (1|band_number), data = ti.f)
+m6 <- glmmTMB(fever_score ~ (treatment + temp) * dpi.f + sex + (1|band_number), data = ti.f)
+m6s <- glmmTMB(fever_score ~ (treatment + temp) * dpi.f * sex + (1|band_number), data = ti.f)
+m7 <- glmmTMB(fever_score ~ (treatment + temp + sex) * dpi.f + (1|band_number), data = ti.f)
+m_null <- glmmTMB(fever_score ~ 1 + (1|band_number), data = ti.f)
+
+aictab(list(m0, m1, m2, m3, m4, m5, m6, m6s, m7, m_null),
+       modnames = c("m0","m1","m2","m3","m4","m5","m6","m6s", "m7", "null"))
+
+simulateResiduals(m6, plot=T)
+hist(resid(m6))
+summary(m6)
+car::Anova(m6, type="III")
+
+#Interaction between temp and dpi does not have one significant dpi, but overall interaction is significant
+m_full  <- glmmTMB(fever_score ~ (treatment + temp) * dpi.f + sex + (1|band_number), data=ti.f)
+m_drop  <- glmmTMB(fever_score ~ treatment * dpi.f + temp + dpi.f + sex + (1|band_number), data=ti.f)
+
+#m_full has lower AIC = do not drop the interaction
+AIC(m_full, m_drop)
+
+glm_fever <- glmmTMB(fever_score ~ (treatment + temp) * dpi.f + sex + (1|band_number), data=ti.f)
+
+simulateResiduals(glm_fever, plot=T)
+
+#Residuals deviate a little - how is residual distribution?
+hist(resid(glm_fever))
+#Normally distributed more or less
+
+summary(glm_fever)
+car::Anova(glm_fever, type = "III")
+car::Anova(glm_fever, type = "II")
+
+# Get emmeans (predicted marginal means)
+emm_df <-  emmeans(glm_fever, ~ sex * treatment * dpi.f * temp, type = "response") %>%
+  as.data.frame() %>%
+  left_join(
+    ti.f %>%
+      distinct(temp, treatment, dpi.f, sex, groups),
+    by = c("temp", "treatment", "dpi.f", "sex")
+  ) %>%
+  dplyr::mutate(groups = dplyr::recode(groups,
+                                       "Warm Control" = "Warm Control",
+                                       "Cold Control" = "Cold Control",
+                                       "Cold Infected" = "Cold Inoculated",
+                                       "Warm Infected" = "Warm Inoculated"))
+
+emm_df <- emm_df %>%
+  mutate(sex = dplyr::recode(sex,
+                             "M" = "Male",
+                             "F" = "Female"))
+
+ti.f.g <- ti.f %>%
+  dplyr::mutate(groups = dplyr::recode(groups,
+                                       "Cold Infected" = "Cold Inoculated",
+                                       "Warm Infected" = "Warm Inoculated"))
+
+ti.f.g <- ti.f.g %>%
+  dplyr::mutate(sex = dplyr::recode(sex,
+                                    "M" = "Male",
+                                    "F" = "Female"))
+
+dodge <- position_dodge(width = .5)
+
+#Model predictions by temp
+ggplot() +
+  geom_point(data = ti.f.g,
+             aes(x = dpi.f, y = fever_score, color = groups),
+             position =dodge,
+             alpha = 0.5, size = 2) +
+  
+  geom_errorbar(data = emm_df,
+                aes(x = dpi.f, ymin = lower.CL, ymax = upper.CL, groups = groups),
+                color="black", position = dodge, width = 0.1) +
+  
+  # geom_ribbon(data = emm_df,
+  #               aes(x = as.numeric(dpi.f), ymin = lower.CL, ymax = upper.CL, groups = groups, fill=groups),
+  #               position = dodge, alpha=0.2) +
+  # 
+  geom_line(data = emm_df,
+            aes(x = as.numeric(dpi.f), y = emmean, linetype = treatment, groups = groups),
+            color="black", position = dodge, size =0.25) +
+  
+  geom_point(data = emm_df,
+             aes(x = dpi.f, y = emmean, color = groups),
+             position = dodge, size = 2.8) +
+  geom_point(data = emm_df,
+             aes(x = dpi.f, y = emmean, group=groups),
+             position = dodge, size = 2.8,
+             shape=1, color="black") +
+  # stat_summary(data = ti.f.g, aes(x=dpi.f, y= fever_score, group = interaction(treatment, temp), color=groups), geom="line", fun = "mean")+
+  
+  scale_color_manual(values = treat_colors) +
+  #scale_fill_manual(values=treat_colors)+
+  scale_shape_manual(values = c(1, 1, 1, 1))+
+  labs(x = "Days Post Inoculation", y = "Ocular Temperature (C)", color = "Treatment Group", shape="Treatment Group", linetype="Inoculation Type") +
+  scale_linetype_manual(
+    name   = "Inoculation Type",
+    values = c("dashed", "solid"),
+    labels = c("Control", "Inoculated")
+  )+
+  facet_grid(~sex)+ #, scales = "free_y"
+  theme(strip.text = element_text(size=12))
+
+
+#Results:
+
+#                       Chisq Df Pr(>Chisq)    
+# (Intercept)     13305.2657  1  < 2.2e-16 ***
+# treatment           0.0085  1  0.9263886    
+# temp              140.9492  1  < 2.2e-16 ***
+# dpi.f              27.5258  6  0.0001154 ***
+# sex                 7.0116  1  0.0080985 ** 
+# treatment:dpi.f    41.0611  6  2.817e-07 ***
+# temp:dpi.f         20.1471  6  0.0026072 ** 
+
+#Cold temp = lower eye temperature
+# temps differed across dpi
+# Temps differed between sexes (M higher)
+# Different kinetics between treatments (inoculated increased ocular temperature)
+# Different kinetics between temps
+
+
+#Model predictions by temp comparing sex directly in inoculated individuals
+#We know there is a trend for males to be more likely to develop pathology when infected in warm temperatures
+#Therefore, we would expect higher ocular temps at high temperatures, so we need a sex interaction
+#But subset to only inocualted individuals
+
+ti.f.i <- ti.f %>% 
+  filter(treatment == "Inoculated")
+
+#Model selection
+m0i <- glmmTMB(fever_score ~ temp + sex + dpi.f + (1|band_number), data = ti.f.i)
+m1i <- glmmTMB(fever_score ~ temp * sex + dpi.f + (1|band_number), data = ti.f.i)
+m2i <- glmmTMB(fever_score ~ sex * dpi.f + temp + (1|band_number), data = ti.f.i)
+m3i <- glmmTMB(fever_score ~ temp * dpi.f + sex + (1|band_number), data = ti.f.i)
+m4i <- glmmTMB(fever_score ~ dpi.f * temp * sex + (1|band_number), data = ti.f.i)
+m_nulli <- glmmTMB(fever_score ~ 1 + (1|band_number), data = ti.f.i)
+
+aictab(list(m0i, m1i, m2i, m3i, m4i, m_nulli),
+       modnames = c("m0","m1","m2","m3","m4", "null"))
+
+simulateResiduals(m1i, plot=T)
+
+glm_fever.i <- glmmTMB(fever_score ~ temp * sex + dpi.f + (1|band_number), data = ti.f.i)
+simulateResiduals(glm_fever.i, plot=T)
+summary(glm_fever.i)
+car::Anova(glm_fever.i, type = "III")
+
+# Get emmeans (predicted marginal means)
+emm_df <-  emmeans(glm_fever.i, ~ sex * dpi.f * temp, type = "response") %>%
+  as.data.frame() %>%
+  left_join(
+    ti.f.i %>%
+      distinct(temp, dpi.f, sex, groups),
+    by = c("temp", "dpi.f", "sex")
+  ) 
+
+emm_df <- emm_df %>%
+  mutate(sex = dplyr::recode(sex,
+                             "M" = "Male",
+                             "F" = "Female"))
+
+ti.f.i <- ti.f.i %>%
+  dplyr::mutate(sex = dplyr::recode(sex,
+                                    "M" = "Male",
+                                    "F" = "Female"))
+
+ggplot() +
+  geom_point(data = ti.f.i,
+             aes(x = dpi.f, y = fever_score, color = sex, shape = sex),
+             position =dodge,
+             alpha = 0.5, size = 2) +
+  # geom_line(data=ti.m.g,
+  #           aes(x=dpi.f, y=mass, color=groups, group = as.factor(band_number)),
+  #           position = dodge, alpha=0.1)+
+  
+  geom_errorbar(data = emm_df,
+                aes(x = dpi.f, ymin = lower.CL, ymax = upper.CL, groups = sex),
+                color="black", position = dodge, width = 0.1) +
+  geom_line(data = emm_df,
+            aes(x = as.numeric(dpi.f), y = emmean, linetype = sex),
+            color="black", position = dodge, size =0.25) +
+  
+  geom_point(data = emm_df,
+             aes(x = dpi.f, y = emmean, color = sex, groups = sex, shape = sex),
+             position = dodge, size = 2.8) +
+  # geom_point(data = emm_df,
+  #            aes(x = dpi.f, y = emmean, group=groups, shape ),
+  #            position = dodge, size = 2.8,
+  #            color="black") +
+  
+  scale_color_manual(values = c("black", "gray50")) +
+  scale_shape_manual(values = c(16, 17))+
+  labs(x = "Days Post Inoculation", y = "Ocular Temperature (C)", color = "Treatment Group", shape="Treatment Group", linetype="Inoculation Type") +
+  # scale_linetype_manual(
+  #   name   = "Inoculation Type",
+  #   values = c("dashed", "solid"),
+  #   labels = c("Control", "Inoculated")
+  # )+
+  facet_grid(~temp)+ #, scales = "free_y"
+  theme(strip.text = element_text(size=12))
+
+
+#Males have higher ocular temperature in warm rooms - is this because more develop pathology?
+#Males more likely to be diseased (almost), if we account for this, does effect go away?
+
+#Model selection
+m1id <- glmmTMB(fever_score ~ temp * sex + dpi.f + ever_diseased + (1|band_number), data = ti.f.i)
+m2id <- glmmTMB(fever_score ~ sex * ever_diseased * dpi.f + temp + (1|band_number), data = ti.f.i)
+m3id <- glmmTMB(fever_score ~ sex * ever_diseased + dpi.f + temp + (1|band_number), data = ti.f.i)
+m4id <- glmmTMB(fever_score ~ sex + ever_diseased * dpi.f + temp + (1|band_number), data = ti.f.i)
+m4ids <- glmmTMB(fever_score ~ sex * ever_diseased * dpi.f + temp + (1|band_number), data = ti.f.i)
+m5id <- glmmTMB(fever_score ~ sex + ever_diseased * dpi.f * temp + (1|band_number), data = ti.f.i)
+m6id <- glmmTMB(fever_score ~ dpi.f * temp * sex * ever_diseased + (1|band_number), data = ti.f.i)
+m7id <- glmmTMB(fever_score ~ ever_diseased * dpi.f + temp * sex + (1|band_number), data = ti.f.i)
+m8id <- glmmTMB(fever_score ~ (sex + ever_diseased) * dpi.f + temp + (1|band_number), data = ti.f.i)
+
+m_nulli <- glmmTMB(fever_score ~ 1 + (1|band_number), data = ti.f.i)
+
+aictab(list(m1id, m2id, m3id, m4id, m4ids, m5id, m6id, m7id, m8id, m_nulli),
+       modnames = c("m1","m2","m3","m4", "m4ids", "m5", "m6", "m7", "m8", "null"))
+
+simulateResiduals(m4id, plot=T)
+summary(m4id)
+car::Anova(m4id, type="III")
+
+glm_fever.id <- glmmTMB(fever_score ~ sex + ever_diseased * dpi.f + temp + (1|band_number), data = ti.f.i)
+simulateResiduals(glm_fever.id, plot=T)
+summary(glm_fever.id)
+car::Anova(glm_fever.id, type = "III")
+
+#compare to treatment
+glm_fd <- glmmTMB(fever_score ~ sex + ever_diseased * dpi.f + temp + (1|band_number), data = ti.f)
+glm_ft <- glmmTMB(fever_score ~ sex + treatment * dpi.f + temp + (1|band_number), data = ti.f)
+glm_fi <- glmmTMB(fever_score ~ sex + ever_infected * dpi.f + temp + (1|band_number), data = ti.f)
+
+
+aictab(list(glm_fd, glm_ft, glm_fi),
+       modnames = c("glm_fd","glm_ft","glm_fi"))
+
+# Get emmeans (predicted marginal means)
+emm_df <-  emmeans(glm_fever.id, ~ sex * dpi.f * temp * ever_diseased, type = "response") %>%
+  as.data.frame() 
+
+emm_df <- emm_df %>%
+  mutate(sex = dplyr::recode(sex,
+                             "M" = "Male",
+                             "F" = "Female"))
+
+
+
+ti.f.g <- ti.f.i %>%
+  dplyr::mutate(sex = dplyr::recode(sex,
+                                    "M" = "Male",
+                                    "F" = "Female"))
+
+dodge <- position_dodge(width = 0.5)
+
+#Model predictions by temp
+ggplot() +
+  geom_point(data = ti.f.g,
+             aes(x = dpi.f, y = fever_score, color = temp, shape=sex, fill=temp),
+             position =dodge,
+             alpha = 0.75, size = 2) +
+  # geom_line(data=ti.m.g,
+  #           aes(x=dpi.f, y=mass, color=groups, group = as.factor(band_number)),
+  #           position = dodge, alpha=0.1)+
+  
+  geom_errorbar(data = emm_df,
+                aes(x = dpi.f, ymin = lower.CL, ymax = upper.CL, group = interaction(sex, temp)),
+                color="black", position = dodge, width = 0.1) +
+  geom_line(data = emm_df,
+            aes(x = as.numeric(dpi.f), y = emmean, linetype = sex, group = interaction(sex, temp)),
+            position = dodge) +
+  
+  geom_point(data = emm_df,
+             aes(x = dpi.f, y = emmean, fill = temp, shape=sex),
+             position = dodge, size = 2.8, stroke = 1) +
+  # stat_summary(data=ti.f.g, aes(x=dpi.f, y=fever_score, color = sex, groups= interaction(ever_diseased, sex, temp)),
+  #              geom="point", fun = mean)+
+  
+  scale_color_manual(values = temp_colors) +
+  scale_fill_manual(values = temp_colors)+
+  scale_shape_manual(values = c(21, 24))+
+  labs(x = "Days Post Inoculation", y = "Ocular Temperature (C)", color = "Temperature", shape="Sex", linetype="Sex") +
+  guides(fill=FALSE)+
+  scale_linetype_manual(
+    values = c("dashed", "solid")
+  )+
+  facet_grid(~ever_diseased, 
+             labeller=labeller(
+               ever_diseased = c('0' = "Never Diseased", '1' = "Ever Diseased")))+
+  theme(strip.text = element_text(size=12))
+
+
+
+####Fever 2) Baseline versus peak fever score####
+#Look only at baseline versus peak fever score. This simplifies models a ton and still looks at magnitude of response
 #Lood at differences between baseline (DPI 0) and peak fever score regardless of when it occurs.
+  #one observation per bird
 ti.fc <- ti.f %>%
+  dplyr::select(band_number, treatment, temp, groups, dpi, fever_score, fever_peak, mass, sex, ever_infected, ever_diseased) %>%
+  group_by(band_number, treatment, temp, groups, sex, ever_infected, ever_diseased) %>%
+  summarise(
+    baseline   = fever_score[dpi == 0],
+    peak       = max(fever_score, na.rm = TRUE),
+    high       = max(fever_high = max(fever_score[dpi != 0])),
+    magnitude  = peak - baseline,
+    mag_high   = high - baseline,
+    .groups    = "drop"
+  ) 
+
+#What if we omit DPI 18?
+ti.fc.omit <- ti.f %>%
+  filter(dpi != 18)%>%
   dplyr::select(band_number, treatment, temp, groups, dpi, fever_score, fever_peak, mass, sex, ever_infected, ever_diseased) %>%
   group_by(band_number, treatment, temp, groups, sex, ever_infected, ever_diseased) %>%
   summarise(
@@ -613,11 +977,10 @@ ggplot(ti.fc, aes(x=groups, y = mag_high, fill=groups))+
     legend.position = "right",
     legend.direction = "vertical"
   )+
-  facet_wrap(~sex)
+  facet_wrap(~ever_diseased)
 
 
-
-ti.long <- pivot_longer(ti.fc,
+ti.long <- pivot_longer(ti.fc, #To check robustness of analysis, change to ti.fc.omit and run analysis to exclude DPI 18
                         cols = c(baseline, high),
                         names_to = "fever_type",
                         values_to = "fever_value")
@@ -691,6 +1054,18 @@ lm2<- glmmTMB(fever_value ~ fever_type * treatment + temp * sex + (1|band_number
 simulateResiduals(lm2, plot=T)
 summary(lm2)
 plot(allEffects(lm2))
+
+####Omitting DPI 18 Results:
+
+#                                     Estimate Std. Error z value Pr(>|z|)    
+# (Intercept)                        36.120018   0.344555  104.83  < 2e-16 ***
+# fever_typePeak                     -0.143750   0.365794   -0.39 0.694334    
+# treatmentInoculated                 0.002291   0.350067    0.01 0.994779    
+# tempCold                           -3.030851   0.363427   -8.34  < 2e-16 ***
+# sexMale                             1.255208   0.355191    3.53 0.000409 ***
+# fever_typePeak:treatmentInoculated  1.358929   0.478936    2.84 0.004548 ** 
+# tempCold:sexMale                   -1.291523   0.503814   -2.56 0.010363 *
+
 
 #Anova type II asks whether there is a main effect overall, averaged across the other variables
 lm2_anova_II <- car::Anova(lm2, type = "II")
@@ -869,11 +1244,18 @@ simulateResiduals(lm2d, plot=T)
 summary(lm2d)
 car::Anova(lm2d, type = "III")
 
-lm2dall <- glmmTMB(fever_value ~ fever_type * ever_diseased + sex + temp + (1|band_number), data=ti.long)
+lm2dis <- glmmTMB(fever_value ~ fever_type * ever_diseased + sex + temp + (1|band_number), data=ti.long)
 lm2t <- glmmTMB(fever_value ~ fever_type * treatment + sex + temp + (1|band_number), data=ti.long)
+lm2i <- glmmTMB(fever_value ~ fever_type * ever_infected + sex + temp + (1|band_number), data=ti.long)
 
 #Ever diseased is a better predictor of fever_value than treatment (change lm2d data to ti.long)
-AIC(lm2dall, lm2t)
+aictab(cand.set=list(lm2dis, lm2t, lm2i), 
+       modnames=c("lm2dis", "lm2t", "lm2i"))
+
+#sex significant if you include controls
+simulateResiduals(lm2dis, plot=T)
+summary(lm2dis)
+car::Anova(lm2dis, type="III")
 
 #emmeans including ever_disaesed
 #estimate fever_type means within each combination of temperature x sex x ever_diseased
@@ -950,478 +1332,9 @@ ggplot(ti.long.i, aes(x = temp,
                ever_diseased = c('0' = "Never Diseased", '1' = "Ever Diseased")))
 
 
-bp_df <- ti.f %>%
-  dplyr::select(band_number, treatment, temp, dpi, fever_score, sex, ever_infected, ever_diseased) %>%
-  group_by(band_number, treatment, temp, sex, ever_infected, ever_diseased) %>%
-  summarise(
-    baseline   = fever_score[dpi == 0],
-    peak       = max(fever_score, na.rm = TRUE),
-    high       = max(fever_high = max(fever_score[dpi != 0])),
-    magnitude  = peak - baseline,
-    mag_high   = high - baseline,
-    .groups  = "drop"
-  ) %>%
-  mutate(treat.temp = interaction(treatment, temp, drop = TRUE)) %>%
-  pivot_longer(
-    c(baseline, high), #Change peak to high; high = max after baseline > allows negative numbers; peak = max including baseline > anything negative will be 0
-    names_to  = "phase",
-    values_to = "fever_value"
-  ) %>%
-  drop_na(fever_value) %>%
-  mutate(
-    phase      = factor(phase, levels = c("baseline","high"), labels = c("Baseline","High")),
-    treat.temp = factor(treat.temp,
-                        levels = c("Sham.Cold", "Inoculated.Cold", "Sham.Warm", "Inoculated.Warm"))  # set your preferred order if needed
-  )
 
 
-#model selection
-fm1 <-glmmTMB(fever_value ~ phase * ever_diseased * temp * sex + (1|band_number),
-              data = bp_df)
-
-fm1.2 <-glmmTMB(fever_value ~ phase * ever_diseased * temp + sex + (1|band_number),
-              data = bp_df)
-fm1.3 <-glmmTMB(fever_value ~ phase * ever_diseased * temp + (1|band_number),
-              data = bp_df)
-
-
-fm2 <-glmmTMB(fever_value ~ phase * ever_diseased + temp + (1|band_number),
-              data = bp_df)
-fm2.1 <-glmmTMB(fever_value ~ phase * ever_diseased + temp * sex + (1|band_number),
-              data = bp_df)
-
-fm3 <-glmmTMB(fever_value ~ phase * ever_diseased + (1|band_number),
-              data = bp_df)
-fm3.1 <-glmmTMB(fever_value ~ phase * ever_diseased + sex + (1|band_number),
-              data = bp_df)
-
-
-fm4 <-glmmTMB(fever_value ~ 1 + (1|band_number),
-              data = bp_df)
-
-
-aictab(cand.set=list( fm1, fm1.2, fm1.3, fm2, fm2.1, fm3, fm3.1, fm4), 
-       modnames=c("fm1", "fm1.2", "fm1.3", "fm2", "fm2.1", "fm3", "fm3.1", "fm4"))
-
-simulateResiduals(fm2.1, plot=T)
-
-m_phase <- glmmTMB(fever_value ~ phase * ever_diseased + temp + sex + (1|band_number),
-                   data = bp_df)
-summary(m_phase)
-simulateResiduals(m_phase, plot=T)
-car::Anova(m_phase, type = "II")
-emmeans(m_phase, pairwise ~ treatment | phase)
-emmeans(m_phase, pairwise ~ temp | phase)
-emmeans(m_phase, pairwise ~ sex | phase)
-
-emm <- emmeans(m_phase, ~ phase | treatment + temp, type = "response")
-emm_df <- as.data.frame(emm) %>%
-  mutate(treat.temp = interaction(treatment, temp, drop = TRUE))
-
-emm_df <- emm_df %>%
-  mutate(
-    phase = factor(phase, levels = c("Baseline","High")),
-    treat.temp = factor(treat.temp, levels = levels(bp_df$treat.temp)),
-    x_num = as.numeric(treat.temp),
-    x_pos = x_num + ifelse(phase == "Baseline", -0.18, 0.18)
-  )
-
-seg_emm <- emm_df %>%
-  dplyr::select(treat.temp, phase, x_pos, emmean) %>%
-  pivot_wider(names_from = phase, values_from = c(x_pos, emmean)) %>%
-  filter(!is.na(emmean_Baseline), !is.na(emmean_High))
-
-nudge <- 0.18
-pos_df <- bp_df %>%
-  mutate(x_num = as.numeric(treat.temp),
-         x_pos = x_num + ifelse(phase == "Baseline", -nudge, +nudge))
-
-ggplot() +
-  # raw paired lines per bird
-  geom_segment(
-    data = pos_df %>% 
-      dplyr::select(band_number, treat.temp, phase, fever_value, x_pos) %>%
-      pivot_wider(names_from = phase, values_from = c(fever_value, x_pos)) %>%
-      filter(!is.na(fever_value_Baseline), !is.na(fever_value_High)),
-    aes(x = x_pos_Baseline, xend = x_pos_High,
-        y = fever_value_Baseline, yend = fever_value_High,
-        color = treat.temp),
-    alpha = 0.15
-  ) +
-  # raw points
-  geom_point(
-    data = pos_df,
-    aes(x = x_pos, y = fever_value, color = treat.temp, shape = phase),
-    size = 3, alpha = 1
-  ) +
-  # EMMEANS segment (Baseline -> Peak)
-  geom_segment(
-    data = seg_emm,
-    aes(x = x_pos_Baseline, xend = x_pos_High,
-        y = emmean_Baseline, yend = emmean_High),
-    color="black",
-    linewidth = 0.75
-  ) +
-  # EMMEANS points
-  geom_point(
-    data = emm_df,
-    aes(x = x_pos, y = emmean, shape = phase),
-    color="black",
-    size = 3,
-  ) +
-  # EMMEANS CIs
-  geom_errorbar(
-    data = emm_df,
-    aes(x = x_pos, ymin = lower.CL, ymax = upper.CL),
-    color="black",
-    width = 0.05, linewidth = 0.75
-  ) +
-  # axis & scales
-  scale_x_continuous(
-    breaks = sort(unique(pos_df$x_num)),
-    labels = levels(pos_df$treat.temp)
-  ) +
-  scale_shape_manual(values = c(Baseline = 1, High = 16)) +
-  scale_color_manual(values=c(treat_colors))+
-  labs(x = "Treatment × Temp", y = "Ocular Temperature (C)",
-       color = "Group", shape = "Phase") +
-  theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-
-##Fever by dpi##
-ggplot(ti.f, aes(x=dpi, y=fever_score, color=groups))+
-  geom_point()
-
-ti.f$dpi.f <- as.factor(ti.f$dpi)
-ti.f$temp <- relevel(as.factor(ti.f$temp), ref = "Warm")
-ti.f$treatment <- relevel(as.factor(ti.f$treatment), ref = "Control")
-
-#did fever differ between treatments at baseline?
-t.test(fever_score ~ treatment, data=ti.f %>% filter(dpi.f == 0))
-
-#did temperature differ between sexes between the rooms at baseline?
-#model selection: Does sex predict body temperature when controlling for room temperature?
-ti.f.cont <- ti.f %>%
-  filter(treatment == "Control")
-c1 <- glmmTMB(fever_score ~ temp + sex + dpi.f + (1|band_number), data=ti.f.cont)
-c2 <- glmmTMB(fever_score ~ temp + sex * dpi.f + (1|band_number), data=ti.f.cont)
-c3 <- glmmTMB(fever_score ~ temp * sex + dpi.f + (1|band_number), data=ti.f.cont)
-c4 <- glmmTMB(fever_score ~ temp * sex * dpi.f + (1|band_number), data=ti.f.cont)
-c5 <- glmmTMB(fever_score ~ temp + dpi.f + (1|band_number), data=ti.f.cont)
-c6 <- glmmTMB(fever_score ~ sex + dpi.f + (1|band_number), data=ti.f.cont)
-null_fc <- glmmTMB(fever_score ~ 1 + (1|band_number), data=ti.f.cont)
-
-aictab(list(c1, c2, c3, c4, c5, c6, null_fc),
-       modnames = c("c1","c2","c3","c4","c5","c6","null"))
-
-#So it isn't actually a sex effect
-summary(c1)
-
-#It's sex and infection
-lm.ts <- glmmTMB(fever_score ~ temp + treatment + sex + dpi.f + (1|band_number), data=ti.f)
-simulateResiduals(lm.ts, plot=T)
-summary(lm.ts)
-plot(allEffects(lm.ts))
-car::Anova(lm.ts, type="III")
-
-#Fever 1) Do kinetics of fever response differ between temperature, treatment, or sex?
-
-#Model Selection
-#because sampled_first is a function of dpi (it is fixed for each dpi), it is collinear with dpi.f, so do not include.
-#We treat dpi as a factor (dpi.f) because this is a linear model therefore we must look only at linear differences
-  #between dpis (no smoothing)
-
-#I want to know whether treatment or temperature affect fever_score or shape of fever response
-#while accounting for sex
-m0 <- glmmTMB(fever_score ~ temp + treatment + sex + dpi.f + (1|band_number), data = ti.f)
-m1 <- glmmTMB(fever_score ~ temp * treatment + sex + dpi.f + (1|band_number), data = ti.f)
-m2 <- glmmTMB(fever_score ~ temp * dpi.f + treatment + sex + (1|band_number), data = ti.f)
-m3 <- glmmTMB(fever_score ~ treatment * dpi.f + temp + sex + (1|band_number), data = ti.f)
-m4 <- glmmTMB(fever_score ~ temp * treatment * dpi.f + sex + (1|band_number), data = ti.f)
-m5 <- glmmTMB(fever_score ~ temp * treatment * dpi.f * sex + (1|band_number), data = ti.f)
-m6 <- glmmTMB(fever_score ~ (treatment + temp) * dpi.f + sex + (1|band_number), data = ti.f)
-m7 <- glmmTMB(fever_score ~ (treatment + temp + sex) * dpi.f + (1|band_number), data = ti.f)
-m_null <- glmmTMB(fever_score ~ 1 + (1|band_number), data = ti.f)
-
-aictab(list(m0, m1, m2, m3, m4, m5, m6,m7, m_null),
-       modnames = c("m0","m1","m2","m3","m4","m5","m6","m7", "null"))
-
-simulateResiduals(m6, plot=T)
-hist(resid(m6))
-summary(m6)
-car::Anova(m6, type="III")
-
-#Interaction between temp and dpi does not have one significant dpi, but overall interaction is significant
-m_full  <- glmmTMB(fever_score ~ (treatment + temp) * dpi.f + sex + (1|band_number), data=ti.f)
-m_drop  <- glmmTMB(fever_score ~ treatment * dpi.f + temp + dpi.f + sex + (1|band_number), data=ti.f)
-
-#m_full has lower AIC = do not drop the interaction
-AIC(m_full, m_drop)
-
-glm_fever <- glmmTMB(fever_score ~ (treatment + temp) * dpi.f + sex + (1|band_number), data=ti.f)
-
-simulateResiduals(glm_fever, plot=T)
-
-#Residuals deviate a little - how is residual distribution?
-hist(resid(glm_fever))
-#Normally distributed more or less
-
-summary(glm_fever)
-car::Anova(glm_fever, type = "III")
-car::Anova(glm_fever, type = "II")
-
-# Get emmeans (predicted marginal means)
-emm_df <-  emmeans(glm_fever, ~ sex * treatment * dpi.f * temp, type = "response") %>%
-  as.data.frame() %>%
-  left_join(
-    ti.f %>%
-      distinct(temp, treatment, dpi.f, sex, groups),
-    by = c("temp", "treatment", "dpi.f", "sex")
-  ) %>%
-  dplyr::mutate(groups = dplyr::recode(groups,
-                                       "Warm Control" = "Warm Control",
-                                       "Cold Control" = "Cold Control",
-                                       "Cold Infected" = "Cold Inoculated",
-                                       "Warm Infected" = "Warm Inoculated"))
-
-emm_df <- emm_df %>%
-  mutate(sex = dplyr::recode(sex,
-                             "M" = "Male",
-                             "F" = "Female"))
-
-ti.f.g <- ti.f %>%
-  dplyr::mutate(groups = dplyr::recode(groups,
-                                       "Cold Infected" = "Cold Inoculated",
-                                       "Warm Infected" = "Warm Inoculated"))
-
-ti.f.g <- ti.f.g %>%
-  dplyr::mutate(sex = dplyr::recode(sex,
-                                       "M" = "Male",
-                                       "F" = "Female"))
-
-dodge <- position_dodge(width = .5)
-
-#Model predictions by temp
-ggplot() +
-  geom_point(data = ti.f.g,
-             aes(x = dpi.f, y = fever_score, color = groups),
-             position =dodge,
-             alpha = 0.5, size = 2) +
-  # geom_line(data=ti.m.g,
-  #           aes(x=dpi.f, y=mass, color=groups, group = as.factor(band_number)),
-  #           position = dodge, alpha=0.1)+
-  
-  geom_errorbar(data = emm_df,
-                aes(x = dpi.f, ymin = lower.CL, ymax = upper.CL, groups = interaction(treatment, temp)),
-                color="black", position = dodge, width = 0.1) +
-  geom_line(data = emm_df,
-            aes(x = as.numeric(dpi.f), y = emmean, linetype = treatment, groups = interaction(treatment, temp)),
-            color="black", position = dodge, size =0.25) +
-  
-  geom_point(data = emm_df,
-             aes(x = dpi.f, y = emmean, color = groups),
-            position = dodge, size = 2.8) +
-  geom_point(data = emm_df,
-             aes(x = dpi.f, y = emmean, group=groups),
-             position = dodge, size = 2.8,
-             shape=1, color="black") +
-  
-  scale_color_manual(values = treat_colors) +
-  scale_shape_manual(values = c(1, 1, 1, 1))+
-  labs(x = "Days Post Inoculation", y = "Ocular Temperature (C)", color = "Treatment Group", shape="Treatment Group", linetype="Inoculation Type") +
-  scale_linetype_manual(
-    name   = "Inoculation Type",
-    values = c("dashed", "solid"),
-    labels = c("Control", "Inoculated")
-  )+
-  facet_grid(~sex)+ #, scales = "free_y"
-  theme(strip.text = element_text(size=12))
-
-
-#Results:
-
-#                       Chisq Df Pr(>Chisq)    
-# (Intercept)     13305.2657  1  < 2.2e-16 ***
-# treatment           0.0085  1  0.9263886    
-# temp              140.9492  1  < 2.2e-16 ***
-# dpi.f              27.5258  6  0.0001154 ***
-# sex                 7.0116  1  0.0080985 ** 
-# treatment:dpi.f    41.0611  6  2.817e-07 ***
-# temp:dpi.f         20.1471  6  0.0026072 ** 
-
-#Cold temp = lower eye temperature
-# temps differed across dpi
-# Temps differed between sexes (M higher)
-# Different kinetics between treatments (inoculated increased ocular temperature)
-# Different kinetics between temps
-
-
-#Model predictions by temp comparing sex directly in inoculated individuals
-#We know there is a trend for males to be more likely to develop pathology when infected in warm temperatures
-  #Therefore, we would expect higher ocular temps at high temperatures, so we need a sex interaction
-  #But subset to only inocualted individuals
-
-ti.f.i <- ti.f %>% 
-  filter(treatment == "Inoculated")
-
-#Model selection
-m0i <- glmmTMB(fever_score ~ temp + sex + dpi.f + (1|band_number), data = ti.f.i)
-m1i <- glmmTMB(fever_score ~ temp * sex + dpi.f + (1|band_number), data = ti.f.i)
-m2i <- glmmTMB(fever_score ~ sex * dpi.f + temp + (1|band_number), data = ti.f.i)
-m3i <- glmmTMB(fever_score ~ temp * dpi.f + sex + (1|band_number), data = ti.f.i)
-m4i <- glmmTMB(fever_score ~ dpi.f * temp * sex + (1|band_number), data = ti.f.i)
-m_nulli <- glmmTMB(fever_score ~ 1 + (1|band_number), data = ti.f.i)
-
-aictab(list(m0i, m1i, m2i, m3i, m4i, m_nulli),
-       modnames = c("m0","m1","m2","m3","m4", "null"))
-
-simulateResiduals(m1i, plot=T)
-
-glm_fever.i <- glmmTMB(fever_score ~ temp * sex + dpi.f + (1|band_number), data = ti.f.i)
-simulateResiduals(glm_fever.i, plot=T)
-summary(glm_fever.i)
-car::Anova(glm_fever.i, type = "III")
-
-# Get emmeans (predicted marginal means)
-emm_df <-  emmeans(glm_fever.i, ~ sex * dpi.f * temp, type = "response") %>%
-  as.data.frame() %>%
-  left_join(
-    ti.f.i %>%
-      distinct(temp, dpi.f, sex, groups),
-    by = c("temp", "dpi.f", "sex")
-  ) 
-
-emm_df <- emm_df %>%
-  mutate(sex = dplyr::recode(sex,
-                             "M" = "Male",
-                             "F" = "Female"))
-
-ti.f.i <- ti.f.i %>%
-  dplyr::mutate(sex = dplyr::recode(sex,
-                                    "M" = "Male",
-                                    "F" = "Female"))
-
-ggplot() +
-  geom_point(data = ti.f.i,
-             aes(x = dpi.f, y = fever_score, color = sex, shape = sex),
-             position =dodge,
-             alpha = 0.5, size = 2) +
-  # geom_line(data=ti.m.g,
-  #           aes(x=dpi.f, y=mass, color=groups, group = as.factor(band_number)),
-  #           position = dodge, alpha=0.1)+
-  
-  geom_errorbar(data = emm_df,
-                aes(x = dpi.f, ymin = lower.CL, ymax = upper.CL, groups = sex),
-                color="black", position = dodge, width = 0.1) +
-  geom_line(data = emm_df,
-            aes(x = as.numeric(dpi.f), y = emmean, linetype = sex),
-            color="black", position = dodge, size =0.25) +
-  
-  geom_point(data = emm_df,
-             aes(x = dpi.f, y = emmean, color = sex, groups = sex, shape = sex),
-             position = dodge, size = 2.8) +
-  # geom_point(data = emm_df,
-  #            aes(x = dpi.f, y = emmean, group=groups, shape ),
-  #            position = dodge, size = 2.8,
-  #            color="black") +
-  
-   scale_color_manual(values = c("black", "gray50")) +
-   scale_shape_manual(values = c(16, 17))+
-  labs(x = "Days Post Inoculation", y = "Ocular Temperature (C)", color = "Treatment Group", shape="Treatment Group", linetype="Inoculation Type") +
-  # scale_linetype_manual(
-  #   name   = "Inoculation Type",
-  #   values = c("dashed", "solid"),
-  #   labels = c("Control", "Inoculated")
-  # )+
-  facet_grid(~temp)+ #, scales = "free_y"
-  theme(strip.text = element_text(size=12))
-
-
-#Males have higher ocular temperature in warm rooms - is this because more develop pathology?
-  #Males more likely to be diseased (almost), if we account for this, does effect go away?
-
-#Model selection
-m1id <- glmmTMB(fever_score ~ temp * sex + dpi.f + ever_diseased + (1|band_number), data = ti.f.i)
-m2id <- glmmTMB(fever_score ~ sex * ever_diseased * dpi.f + temp + (1|band_number), data = ti.f.i)
-m3id <- glmmTMB(fever_score ~ sex * ever_diseased + dpi.f + temp + (1|band_number), data = ti.f.i)
-m4id <- glmmTMB(fever_score ~ sex + ever_diseased * dpi.f + temp + (1|band_number), data = ti.f.i)
-m5id <- glmmTMB(fever_score ~ sex + ever_diseased * dpi.f * temp + (1|band_number), data = ti.f.i)
-m6id <- glmmTMB(fever_score ~ dpi.f * temp * sex * ever_diseased + (1|band_number), data = ti.f.i)
-m7id <- glmmTMB(fever_score ~ ever_diseased * dpi.f + temp * sex + (1|band_number), data = ti.f.i)
-m8id <- glmmTMB(fever_score ~ (sex + ever_diseased) * dpi.f + temp + (1|band_number), data = ti.f.i)
-
-m_nulli <- glmmTMB(fever_score ~ 1 + (1|band_number), data = ti.f.i)
-
-aictab(list(m1id, m2id, m3id, m4id, m5id, m6id, m7id, m8id, m_nulli),
-       modnames = c("m1","m2","m3","m4", "m5", "m6", "m7", "m8", "null"))
-
-simulateResiduals(m4id, plot=T)
-summary(m4id)
-car::Anova(m4id, type="III")
-
-glm_fever.id <- glmmTMB(fever_score ~ sex + ever_diseased * dpi.f + temp + (1|band_number), data = ti.f.i)
-simulateResiduals(glm_fever.id, plot=T)
-summary(glm_fever.id)
-car::Anova(glm_fever.id, type = "III")
-
-# Get emmeans (predicted marginal means)
-emm_df <-  emmeans(glm_fever.id, ~ sex * dpi.f * temp * ever_diseased, type = "response") %>%
-  as.data.frame() 
-
-emm_df <- emm_df %>%
-  mutate(sex = dplyr::recode(sex,
-                             "M" = "Male",
-                             "F" = "Female"))
-
-
-
-ti.f.g <- ti.f.i %>%
-  dplyr::mutate(sex = dplyr::recode(sex,
-                                    "M" = "Male",
-                                    "F" = "Female"))
-
-dodge <- position_dodge(width = 0.1)
-
-#Model predictions by temp
-ggplot() +
-  geom_point(data = ti.f.g,
-             aes(x = dpi.f, y = fever_score, color = temp, shape=sex),
-             position =dodge,
-             alpha = 1, size = 2) +
-  # geom_line(data=ti.m.g,
-  #           aes(x=dpi.f, y=mass, color=groups, group = as.factor(band_number)),
-  #           position = dodge, alpha=0.1)+
-  
-  geom_errorbar(data = emm_df,
-                aes(x = dpi.f, ymin = lower.CL, ymax = upper.CL, group = interaction(sex, temp)),
-                color="black", position = dodge, width = 0.1) +
-  geom_line(data = emm_df,
-            aes(x = as.numeric(dpi.f), y = emmean, linetype = sex, group = interaction(sex, temp)),
-            position = dodge) +
-  
-  geom_point(data = emm_df,
-             aes(x = dpi.f, y = emmean, fill = temp, shape=sex),
-             position = dodge, size = 2.8, stroke = 1) +
-  # stat_summary(data=ti.f.g, aes(x=dpi.f, y=fever_score, color = sex, groups= interaction(ever_diseased, sex, temp)),
-  #              geom="point", fun = mean)+
-
-  scale_color_manual(values = temp_colors) +
-  scale_fill_manual(values = temp_colors)+
-  scale_shape_manual(values = c(21, 24))+
-  labs(x = "Days Post Inoculation", y = "Ocular Temperature (C)", color = "Temperature", shape="Sex", linetype="Sex") +
-  guides(fill=FALSE)+
-  scale_linetype_manual(
-    values = c("dashed", "solid")
-  )+
-    facet_grid(~ever_diseased, 
-             labeller=labeller(
-               ever_diseased = c('0' = "Never Diseased", '1' = "Ever Diseased")))+
-  theme(strip.text = element_text(size=12))
-
-#And just to make sure, do control birds differ by sex or temperature?
-
-#######Magnitude of Fever Change####
+####Fever 3) Magnitude of Fever Change#####
 hist(ti.fc$mag_high)
 
 #Question: Does the magnitude of change differ based on treatment, temperature, or sex
@@ -1432,11 +1345,11 @@ fh2.2 <- lm(mag_high ~ temp+treatment*sex, data=ti.fc)
 null_fh <- lm(mag_high ~ 1, data=ti.fc)
 
 
-aictab(cand.set=list(fh1, fh2, fh2.1, fh2.2, fh3, fh3.1, fh4, fh4.1, null_fh), 
-       modnames=c("fh1", "fh2", "fh2.1", "fh2.2", "fh3", "fh3.1", "fh4", "fh4.1", "null"))
+aictab(cand.set=list(fh1, fh2, fh2.1, fh2.2, null_fh), 
+       modnames=c("fh1", "fh2", "fh2.1", "fh2.2", "null"))
 
 #no effect of sex
-summary(fh4.1)
+summary(fh2.1)
 
 #Does the magnitude of change in eye temperature between baseline and peak differ between treatments?
 lm3 <- lm(mag_high ~ temp+treatment, data=ti.fc)
@@ -1474,7 +1387,7 @@ ggplot(ti.fc, aes(x=groups, y=mag_high, color = groups))+
     legend.direction = "vertical",
   )
 
-#Is this all jsut being driven by who gets disease?
+#Is this all just being driven by who gets disease?
 ti.fci <- ti.fc %>%
   filter(treatment == "Inoculated")
 ti.fci$ever_diseased <- as.factor(ti.fci$ever_diseased)
@@ -1497,8 +1410,21 @@ null_fi <- lm(mag_high ~ 1, data=ti.fci)
 aictab(cand.set=list(fi1, fi1.1, fi1.2, fi2, fi3, fi4, fi5, fi6, null_fi), 
        modnames=c("fi1", "fi1.1", "fi1.2", "fi2", "fi3", "fi4", "fi5", "fi6", "null"))
 
-summary(fi1)
 summary(fi1.1)
+
+simulateResiduals(fi1, plot=T)
+hist(resid(fi1))
+summary(fi1)
+car::Anova(fi1, type="II")
+
+#Compare to treatment
+fc1 <- lm(mag_high ~ treatment, data=ti.fc)
+fc2 <- lm(mag_high ~ ever_diseased, data = ti.fc)
+fc3 <- lm(mag_high ~ ever_infected, data = ti.fc)
+
+#ever_diseased best model
+aictab(cand.set=list(fc1, fc2, fc3), 
+       modnames=c("fc1", "fc2", "fc3"))
 
 #emmeans
 emm <-emmeans(fi1, ~ever_diseased)
@@ -1509,18 +1435,21 @@ emm_df <- as.data.frame(emm)  # has emmean, SE, lower.CL, upper.CL
 
 emm_df$ever_diseased <- as.factor(emm_df$ever_diseased)
 
-ggplot(ti.fci, aes(x=ever_diseased, y=mag_high, color = ever_diseased))+
+#Ever diseased predicts fever change magnitude
+ggplot(ti.fci, aes(x=ever_diseased, y=mag_high, color = temp))+
   geom_jitter(size=2.5, alpha=0.75, aes(shape=sex, group= sex),
               position=position_jitterdodge(dodge.width=0.25, jitter.width = 0.1, jitter.height = 0))+
   geom_point(data=emm_df, aes(y=emmean, x=ever_diseased), color="black", size=3)+
   geom_errorbar(data=emm_df, aes(y=emmean, ymin=lower.CL, ymax=upper.CL, x=ever_diseased), width=0., color="black", size=.75)+
-  labs(x="Disease Category", y= "Magnitude of Fever Change (Peak - Baseline [C])", color="Disease Category", shape = "Sex")+
-  scale_color_manual(values=c(inf_colors))+
+  labs(x="Disease Category", y= "Magnitude of Fever Change (Peak - Baseline [C])", color="Temperature", shape = "Sex")+
+  scale_color_manual(values=c(temp_colors))+
   theme(
     axis.text.x = element_text(size=13),
     legend.position = "right",
     legend.direction = "vertical",
   )
+
+
 
 # tidy or convert results
 lm3_coef_fixed   <- broom.mixed::tidy(lm3, effects = "fixed", conf.int = TRUE)
@@ -1547,137 +1476,18 @@ lm3_out_list <- list(
 # write to one Excel file
 #write_xlsx(lm3_out_list, "/Users/jesse/Documents/GitHub/Temperature-and-Immunity-2022/Results/Fever_Magnitude_Results.xlsx")
 
-
-#Model Predictions > lm only so different 
-mod <- lm3
-# build prediction grid from the same factor levels
-dat.new <- ti.fc %>%
-  distinct(temp, treatment, groups)
-
-# predictions (confidence interval for the mean)
-pr <- predict(lm3, newdata = dat.new, se.fit = TRUE)
-dat.new <- dat.new %>%
-  mutate(
-    yhat = pr$se.fit*0 + pr$fit,     # just to keep the naming obvious
-    Lower  = pr$fit - 1.96 * pr$se.fit,
-    Upper  = pr$fit + 1.96 * pr$se.fit
-  )
-
-#Model Predictions
-ggplot(ti.fc, aes(x=groups, y=mag_high, color = groups))+
-  geom_jitter(width = 0.1, height=0, shape =16, size=2)+
-  geom_point(data=dat.new, aes(y=yhat, x=groups), color="black")+
-  geom_errorbar(data=dat.new, aes(y=yhat, ymin=Lower, ymax=Upper, x=groups), width=0.1, color="black")+
-  labs(x="Treatment x Temp", y= "Magnitude of Fever Change (Peak - Baseline)", color="Treatment")+
-  scale_color_manual(values=c(treat_colors))+
-  theme(
-    axis.text.x = element_text(angle = 45, hjust=1),
-    legend.position = "right",
-    legend.direction = "vertical"
-  )
-
-####Phagocytosis####
-source("dataCleaning_phago.R")
-
-##   Binomial model and the
-#    weights represent the total number of trials, since the response is a
-#    pre-calculated proportion. The interaction between temp and treatment was
-#    not significant.
-
-ti.p$temp <- as.factor(ti.p$temp)
-ti.p$treatment <- as.factor(ti.p$treatment)
-
-ti.p <- ti.p %>%
-  mutate(
-    temp      = relevel(temp, ref = "Warm"),        # or whichever baseline you want
-    treatment = relevel(treatment, ref = "Sham") # change as needed
-  )
-
-glm4 <- glmmTMB(phago_score~temp+treatment + (1|band_number), 
-                weights=wbc_total+phago_total, 
-                data=ti.p, family="binomial")
-
-simulateResiduals(glm4, plot = T)
-
-summary(glm4)
-
-plot(allEffects(glm4))
-
-#Anova type II asks whether there is a main effect overall, averaged across the other variables
-glm4_anova_II <- car::Anova(glm4, type = "II")
-
-glm4_anova_III <- car::Anova(glm4, type = "III")
-
-
-#emmeans
-emm <- emmeans(glm4, ~ temp * treatment, type = "response", re.form = NA)
-emm_df <- as.data.frame(emm) %>%
-  mutate(
-    groups = paste(temp, ifelse(treatment == "Inoculated", "Inoculated", "Control")),
-    groups = factor(groups, levels = lvl)
-  )
-
-ti.p <- ti.p %>%
-  mutate(
-    groups = paste(temp, ifelse(treatment == "Inoculated", "Inoculated", "Control")),
-    groups = factor(groups, levels = lvl)
-  )
-
-ggplot(emm_df, aes(x = groups, y = prob, color=groups))+
-  geom_jitter(data = ti.p, aes(x = groups, y = phago_score, color = groups),
-              width = 0.2, alpha = 0.75, size=2.5)+
-  geom_point(size=3, color="black")+
-  geom_errorbar(aes(ymin = asymp.LCL, ymax = asymp.UCL, y=prob), width=0., color="black", size=0.75)+
-  labs(x="Treatment", y="Phagocytosis Score", color="Treatment")+
-  scale_color_manual(values=treat_colors)+
-  theme(
-    axis.text.x = element_text(size=13, angle=45, hjust=1)
-  )
-  #facet_wrap(~temp)
-
-ggplot(ti.p, aes(x=groups, y=phago_score, color=groups))+
-  geom_jitter()+
-  facet_wrap(~infected)+
-  scale_color_manual(values=treat_colors)+
-  theme(
-    axis.text.x = element_text(size=13, angle=45, hjust=1)
-  )
-
-# tidy or convert results
-glm4_coef_fixed   <- broom.mixed::tidy(glm4, effects = "fixed", conf.int = TRUE)
-glm4_coef_random  <- broom.mixed::tidy(glm4, effects = "ran_pars", conf.int = TRUE)
-glm4_fit_glance   <- broom.mixed::glance(glm4) 
-glm4_anova_II_df  <- broom::tidy(glm4_anova_II)
-glm4_anova_III_df <- broom::tidy(glm4_anova_III)
-glm4_emm_df       <- as.data.frame(emm)
-glm4_pairs_df     <- as.data.frame(pairs(emm, by = c("temp"), adjust = "tukey"))
-
-# combine into one named list
-glm4_out_list <- list(
-  "Model_Fixed_Coeffs"     = glm4_coef_fixed,
-  "Model_Random_Vars"      = glm4_coef_random,
-  "Model_Fit_Summary"      = glm4_fit_glance,
-  "ANOVA_Type_II"          = glm4_anova_II_df,
-  "ANOVA_Type_III"         = glm4_anova_III_df,
-  "Estimated_Marginal_Means" = glm4_emm_df,
-  "Pairwise_Comparisons"   = glm4_pairs_df
-)
-
-# write to one Excel file
-#write_xlsx(glm4_out_list, "/Users/jesse/Documents/GitHub/Temperature-and-Immunity-2022/Results/Phagocytosis_Results.xlsx")
-
 #####Eye Score####
-source("dataCleaning_TI22.R")
+source("r_scripts/dataCleaning_TI22.R")
 
 range(ti.cont$quantity) #highest control quantity = 95.38
-ti$quant_cutoff = 100
+ti$quant_cutoff = 50
 ti$seropos_cutoff = 0.061
 ti$sympt_cutoff = 0.1
 
 #Sample sizes
 ti %>%
   filter(dpi ==0)%>%
-  dplyr::select(treatment, temp, inf_temp)%>%
+  dplyr::select(treatment, temp, groups)%>%
   tbl_summary(
   )%>%
   modify_header(
@@ -1685,7 +1495,7 @@ ti %>%
   )
 
 ti %>%
-  dplyr::select(dpi, treatment, temp, inf_temp)%>%
+  dplyr::select(dpi, treatment, temp, groups)%>%
   tbl_summary(
     by=dpi
   )%>%
@@ -1708,8 +1518,8 @@ ti.inoc$quant_cutoff = 22.5
 #infected = eye score or pathology >= cutoff
 ti.inoc <- ti.inoc %>%
   mutate(diseased= ifelse(total_eye_score>=sympt_cutoff, 1, 0),
-    sick = ifelse(total_eye_score>=sympt_cutoff | quantity >= quant_cutoff, 1, 0),
-    infected = ifelse(quantity >= quant_cutoff, 1, 0))
+         sick = ifelse(total_eye_score>=sympt_cutoff | quantity >= quant_cutoff, 1, 0),
+         infected = ifelse(quantity >= quant_cutoff, 1, 0))
 
 #new column with whether the bird is ever diseased
 ti.inoc <- ti.inoc %>%
@@ -1718,12 +1528,12 @@ ti.inoc <- ti.inoc %>%
          ever_infected = ifelse(any(coalesce(infected, 0) == 1), 1, 0),
          ever_sick = ifelse(any(coalesce(sick, 0) == 1), 1,0))%>%
   ungroup()
-  
+
 
 #Sample sizes
-  #ever_diseased: cold n=6, warm n=8
-  #ever_infected: cold n=12, warm n=13
-    #Asymptomatic: cold n=6, warm n=5
+#ever_diseased: cold n=6, warm n=8
+#ever_infected: cold n=12, warm n=13
+#Asymptomatic: cold n=6, warm n=5
 ti.inoc %>%
   filter(dpi ==28)%>%
   dplyr::select(temp, ever_diseased, ever_infected, ever_sick)%>%
@@ -1735,10 +1545,12 @@ ti.inoc %>%
   )
 
 #Source Eye Score Formatting
-source("dataCleaning_eyeScore.R")
-#Ordinal Mixed Effects Model
+source("r_scripts/dataCleaning_eyeScore.R")
+
+
+####Eye Score: Ordinal Mixed Effects Model####
 #Sham birds did not get infected therefore did not have eyescores. Remove from analysis so that model converges.
-  #No eye score on DPI 3 so also remove. Keep DPI 0 as reference category.
+#No eye score on DPI 3 so also remove. Keep DPI 0 as reference category.
 ti.mod <- ti %>%
   dplyr::select(date, dpi, band_number, bird_ID, treatment, temp, total_eye_score)%>%
   filter(treatment != "Sham" & dpi %in% c(0, 7,9,14,18,21,24,28))%>%
@@ -1794,7 +1606,7 @@ summary(clm.c)
 summary(clm.d)
 
 aictab(cand.set=list(clm.a, clm.c),
-      modnames= c("clm.a", "clm.c"))
+       modnames= c("clm.a", "clm.c"))
 
 aictab(cand.set=list(clm.b, clm.d),
        modnames= c("clm.b", "clm.d"))
@@ -1818,8 +1630,8 @@ emmip(clm.d, temp ~ dpi_f)
 
 #use eye5 in final model
 clm1 <- clmm(eye5 ~ temp + dpi_f + (1|band_number),
-              data=ti.mod,
-              link = "logit")
+             data=ti.mod,
+             link = "logit")
 
 summary(clm1)
 
@@ -1881,7 +1693,7 @@ ggplot(ti.inoc, aes(x=dpi, y=total_eye_score, color=temp))+
 
 
 
-#GAM
+#####Eye score: GAM####
 mod.e <- ti.inoc %>%
   dplyr::filter(treatment == "Inoculated" & dpi > 0)%>%
   dplyr::mutate(total_eye_score1 = total_eye_score+0.001, #add small constant for gamma model
@@ -1889,7 +1701,7 @@ mod.e <- ti.inoc %>%
                 temp = factor(temp),
                 band_number = factor(band_number)
   )
-                
+
 #Use GAM to ask how temperature affects eye score
 # Fit a GAM with smooth function of dpi, separate smooths for each temperature
 #7 dpi, so need k to be less than 7
@@ -2055,54 +1867,125 @@ cmp_tbl <- anova(gam_null, gam1, test = "Chisq") %>%
 # )
 
 ti.inoc$dpi.f <- as.factor(ti.inoc$dpi)
-##Zero-Inflated Gamma Model##
+####Eye Score: Zero-Inflated Gamma Model####
+unique(ti.inoc$dpi)
+
 lmes <- glmmTMB(total_eye_score ~ temp*dpi + (1|band_number),
-               data=ti.inoc, 
-               ziformula = ~ temp,
-               family = ziGamma(link = "log"))
+                data=ti.inoc, 
+                ziformula = ~ temp,
+                family = ziGamma(link = "log"))
 
 #zero-inflated model allowing for temperature to dictate the probability of zero.
 #for the non-zero birds, we used a gamma model with a log link function, including a two way interaction between temp and dpi and all lower order effects
 
-simulateResiduals(lmes, plot=T)
-summary(lmes)
-car::Anova(lmes, type = "III")
+#model selection
+l1 <- glmmTMB(total_eye_score ~ temp*dpi + (1|band_number),
+                 data=ti.inoc, 
+                 ziformula = ~ temp,
+                 family = ziGamma(link = "log"))
 
-# Pairwise comparisons (Tukey-adjusted)
-dpi_vals <- sort(unique(ti.inoc$dpi))
+l2 <- glmmTMB(total_eye_score ~ temp*dpi + (1|band_number),
+              data=ti.inoc, 
+              ziformula = ~ sex,
+              family = ziGamma(link = "log"))
 
-# 1) EMMs for temp at each dpi (population-level: drop REs)
-emm <- emmeans(
-  lmes,
-  specs = ~ temp | dpi,              # simple effects of temp by dpi
-  at    = list(dpi = dpi_vals),      # evaluate at each observed dpi
-  type  = "response",
-  re.form = NA
+l3 <- glmmTMB(total_eye_score ~ temp*dpi + sex + (1|band_number),
+              data=ti.inoc, 
+              ziformula = ~ temp,
+              family = ziGamma(link = "log"))
+
+l4 <- glmmTMB(total_eye_score ~ temp*dpi * sex + (1|band_number),
+              data=ti.inoc, 
+              ziformula = ~ temp,
+              family = ziGamma(link = "log"))
+
+aictab(cand.set=list(l1, l2, l3, l4), 
+       modnames=c("l1", "l2", "l3", "l4"))
+
+simulateResiduals(l2, plot=T)
+summary(l2)
+car::Anova(l2, type = "III")
+
+
+
+l1_poly <- glmmTMB(total_eye_score ~ temp * poly(dpi, 2) + (1|band_number),
+              data=ti.inoc, 
+              ziformula = ~ temp,
+              family = ziGamma(link = "log"))
+
+l2_poly <- glmmTMB(
+  total_eye_score ~ sex + temp * poly(dpi, 2) + (1 | band_number),
+  data      = ti.inoc,
+  ziformula = ~ sex,
+  family    = ziGamma(link = "log")
 )
 
-library(multcomp)
-# Extract the emmeans table (not the contrasts)
-means <- cld(emmeans_results$emmeans,
-             adjust = "tukey",    # adjust letters for multiple comparisons
-             Letters = letters,   # use a,b,c... labeling
-             alpha = 0.05)        # significance threshold
+l3_poly <- glmmTMB(total_eye_score ~ temp* poly(dpi, 2) + sex + (1|band_number),
+              data=ti.inoc, 
+              ziformula = ~ temp,
+              family = ziGamma(link = "log"))
 
-# Convert to data frame
-means_df <- as.data.frame(means)
+l4_poly <- glmmTMB(total_eye_score ~ temp*poly(dpi, 2) * sex + (1|band_number),
+              data=ti.inoc, 
+              ziformula = ~ temp,
+              family = ziGamma(link = "log"))
 
-head(means_df)
+l5_poly <- glmmTMB(total_eye_score ~ sex + temp * poly(dpi, 2) + (1|band_number),
+                   data=ti.inoc, 
+                   ziformula = ~ temp * poly(dpi, 2) + sex,
+                   family = ziGamma(link = "log"))
 
-ggplot(means_df, aes(x = dpi, y = response, color = fct_rev(temp)))+
-  geom_jitter(data = ti.inoc, aes(x = dpi, y = total_eye_score), 
-              width = 0.1, alpha = 0.5)+
-  geom_errorbar(aes(ymin = asymp.LCL, ymax = asymp.UCL),     
-                width = 0.1)+
-  stat_summary(data= ti.inoc, aes(x=dpi, y=total_eye_score, group= temp), geom="line", fun = "mean")+
-  #geom_line(aes(group = temp), linewidth = 1.2)+
-  geom_point(size = 3)+
-  theme_bw()#+
-facet_wrap(~temp)
+aictab(cand.set=list(l1_poly, l2_poly, l3_poly, l4_poly, l5_poly), 
+       modnames=c("l1_poly", "l2_poly", "l3_poly", "l4_poly", "l5_poly"))
 
+simulateResiduals(l5_poly, plot=T)
+summary(l5_poly)
+car::Anova(l5_poly, type="III")
+
+emm_poly <- emmeans(
+  l5_poly,
+  ~ temp | dpi*sex,
+  at = list(dpi = sort(unique(ti.inoc$dpi))),
+  component = "response",
+  type = "response"
+)
+
+emm_poly_df <- as.data.frame(emm_poly)
+
+#For emmeans, we can look at conditional model (severity among birds that have pathology), or overall mean
+
+ggplot() +
+  # raw data
+  geom_jitter(
+    data = ti.inoc,
+    aes(x = dpi, y = total_eye_score, color = temp),
+    width = 0.3, height = 0.1,
+    alpha = 0.5, size = 2
+  ) +
+  # model means
+  geom_line(
+    data = emm_poly_df,
+    aes(x = dpi, y = emmean, color = temp, group = temp),
+    size = 0.9
+  ) +
+  # 95% CI around means
+  geom_ribbon(
+    data = emm_poly_df,
+    aes(x = dpi,
+        ymin = asymp.LCL, ymax = asymp.UCL,
+        fill = temp, group = temp),
+    alpha = 0.2,
+    colour = NA
+  ) +
+  labs(
+    x = "Days post inoculation",
+    y = "Ocular pathology (total eye score)",
+    color = "Temperature",
+    fill  = "Temperature"
+  )+
+  scale_color_manual(values = temp_colors)+
+  scale_fill_manual(values = temp_colors)+
+  facet_wrap(~sex)
 
 #Max Eye Score
 ti.mod.m <- ti.mod %>%
@@ -2130,6 +2013,98 @@ ggplot(ti.mod.m, aes(x = temp, y = max_tes, color = temp, fill=temp)) +
   scale_fill_manual(values = temp_colors) +
   labs(x = "Group", y = "Max Eyescore", color="Temperature", fill="Temperature")
 
+
+
+
+####Phagocytosis####
+source("dataCleaning_phago.R")
+
+##   Binomial model and the
+#    weights represent the total number of trials, since the response is a
+#    pre-calculated proportion. The interaction between temp and treatment was
+#    not significant.
+
+ti.p$temp <- as.factor(ti.p$temp)
+ti.p$treatment <- as.factor(ti.p$treatment)
+
+ti.p <- ti.p %>%
+  mutate(
+    temp      = relevel(temp, ref = "Warm"),        # or whichever baseline you want
+    treatment = relevel(treatment, ref = "Sham") # change as needed
+  )
+
+glm4 <- glmmTMB(phago_score~temp+treatment + (1|band_number), 
+                weights=wbc_total+phago_total, 
+                data=ti.p, family="binomial")
+
+simulateResiduals(glm4, plot = T)
+
+summary(glm4)
+
+plot(allEffects(glm4))
+
+#Anova type II asks whether there is a main effect overall, averaged across the other variables
+glm4_anova_II <- car::Anova(glm4, type = "II")
+
+glm4_anova_III <- car::Anova(glm4, type = "III")
+
+
+#emmeans
+emm <- emmeans(glm4, ~ temp * treatment, type = "response", re.form = NA)
+emm_df <- as.data.frame(emm) %>%
+  mutate(
+    groups = paste(temp, ifelse(treatment == "Inoculated", "Inoculated", "Control")),
+    groups = factor(groups, levels = lvl)
+  )
+
+ti.p <- ti.p %>%
+  mutate(
+    groups = paste(temp, ifelse(treatment == "Inoculated", "Inoculated", "Control")),
+    groups = factor(groups, levels = lvl)
+  )
+
+ggplot(emm_df, aes(x = groups, y = prob, color=groups))+
+  geom_jitter(data = ti.p, aes(x = groups, y = phago_score, color = groups),
+              width = 0.2, alpha = 0.75, size=2.5)+
+  geom_point(size=3, color="black")+
+  geom_errorbar(aes(ymin = asymp.LCL, ymax = asymp.UCL, y=prob), width=0., color="black", size=0.75)+
+  labs(x="Treatment", y="Phagocytosis Score", color="Treatment")+
+  scale_color_manual(values=treat_colors)+
+  theme(
+    axis.text.x = element_text(size=13, angle=45, hjust=1)
+  )
+  #facet_wrap(~temp)
+
+ggplot(ti.p, aes(x=groups, y=phago_score, color=groups))+
+  geom_jitter()+
+  facet_wrap(~infected)+
+  scale_color_manual(values=treat_colors)+
+  theme(
+    axis.text.x = element_text(size=13, angle=45, hjust=1)
+  )
+
+# tidy or convert results
+glm4_coef_fixed   <- broom.mixed::tidy(glm4, effects = "fixed", conf.int = TRUE)
+glm4_coef_random  <- broom.mixed::tidy(glm4, effects = "ran_pars", conf.int = TRUE)
+glm4_fit_glance   <- broom.mixed::glance(glm4) 
+glm4_anova_II_df  <- broom::tidy(glm4_anova_II)
+glm4_anova_III_df <- broom::tidy(glm4_anova_III)
+glm4_emm_df       <- as.data.frame(emm)
+glm4_pairs_df     <- as.data.frame(pairs(emm, by = c("temp"), adjust = "tukey"))
+
+# combine into one named list
+glm4_out_list <- list(
+  "Model_Fixed_Coeffs"     = glm4_coef_fixed,
+  "Model_Random_Vars"      = glm4_coef_random,
+  "Model_Fit_Summary"      = glm4_fit_glance,
+  "ANOVA_Type_II"          = glm4_anova_II_df,
+  "ANOVA_Type_III"         = glm4_anova_III_df,
+  "Estimated_Marginal_Means" = glm4_emm_df,
+  "Pairwise_Comparisons"   = glm4_pairs_df
+)
+
+# write to one Excel file
+#write_xlsx(glm4_out_list, "/Users/jesse/Documents/GitHub/Temperature-and-Immunity-2022/Results/Phagocytosis_Results.xlsx")
 
 ####Pathogen Load####
 source("dataCleaning_pathogenLoad.R")
