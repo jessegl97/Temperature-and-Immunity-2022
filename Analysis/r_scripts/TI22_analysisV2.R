@@ -1868,12 +1868,54 @@ cmp_tbl <- anova(gam_null, gam1, test = "Chisq") %>%
 
 ti.inoc$dpi.f <- as.factor(ti.inoc$dpi)
 ####Eye Score: Zero-Inflated Gamma Model####
+ti.inoc <- ti.inoc %>%
+  mutate(
+    temp      = relevel(temp, ref = "Warm"),
+    sex = relevel(sex, ref = "F") 
+  )
+
 unique(ti.inoc$dpi)
 
 lmes <- glmmTMB(total_eye_score ~ temp*dpi + (1|band_number),
                 data=ti.inoc, 
                 ziformula = ~ temp,
                 family = ziGamma(link = "log"))
+
+
+simulateResiduals(lmes, plot=T)
+summary(lmes)
+
+
+lm1 <- glmmTMB(total_eye_score ~ temp*dpi + (1|band_number),
+               data=ti.inoc, 
+               ziformula = ~ temp,
+               family = ziGamma(link = "log"))
+
+AIC(lmes, lm1)
+
+library(multcomp)
+means <- cld(emmeans(lm1, pairwise ~ dpi*temp, adjust = "tukey", type = "response"))
+
+# Obtain estimated marginal means (emmeans) with pairwise comparisons
+emmeans_results <- emmeans(lm1, pairwise ~ dpi * temp, adjust = "tukey", type = "response")
+
+# Extract the 'emmeans' part and apply cld()
+means <- cld(emmeans_results$emmeans)
+
+# Convert to data frame if needed
+means_df <- as.data.frame(means)
+
+ggplot(means_df, aes(x = dpi, y = response, color = fct_rev(temp)))+
+  geom_jitter(data = ti.mg, aes(x = dpi, y = tes), 
+              width = 0.1, alpha = 0.5)+
+  geom_errorbar(aes(ymin = asymp.LCL, ymax = asymp.UCL),     
+                width = 0.1)+
+  stat_summary(data= ti.mg, aes(x=dpi, y=tes, group= temp), geom="line", fun = "mean")+
+  #geom_line(aes(group = temp), linewidth = 1.2)+
+  geom_point(size = 3)+
+  theme_bw()#+
+facet_wrap(~temp)
+
 
 #zero-inflated model allowing for temperature to dictate the probability of zero.
 #for the non-zero birds, we used a gamma model with a log link function, including a two way interaction between temp and dpi and all lower order effects
@@ -1907,6 +1949,39 @@ summary(l2)
 car::Anova(l2, type = "III")
 
 
+# 1. No zero inflation (baseline)
+m0 <- glmmTMB(
+  total_eye_score ~ temp * poly(dpi, 2) + sex + (1|band_number),
+  family = Gamma(link = "log"),
+  data = ti.inoc
+)
+
+# 2. Simple zi, constant over birds
+m1 <- glmmTMB(
+  total_eye_score ~ temp * poly(dpi, 2) + sex + (1|band_number),
+  ziformula = ~ 1,
+  family = ziGamma(link = "log"),
+  data = ti.inoc
+)
+
+# 3. Additive zi
+m2 <- glmmTMB(
+  total_eye_score ~ temp * poly(dpi, 2) + sex + (1|band_number),
+  ziformula = ~ temp + poly(dpi, 2) + sex,
+  family = ziGamma(link = "log"),
+  data = ti.inoc
+)
+
+# 4. Interactive zi
+m3 <- glmmTMB(
+  total_eye_score ~ temp * poly(dpi, 2) + sex + (1|band_number),
+  ziformula = ~ temp * poly(dpi, 2) + sex,
+  family = ziGamma(link = "log"),
+  data = ti.inoc
+)
+
+AIC(m1, m2, m3)
+
 
 l1_poly <- glmmTMB(total_eye_score ~ temp * poly(dpi, 2) + (1|band_number),
               data=ti.inoc, 
@@ -1932,21 +2007,72 @@ l4_poly <- glmmTMB(total_eye_score ~ temp*poly(dpi, 2) * sex + (1|band_number),
 
 l5_poly <- glmmTMB(total_eye_score ~ sex + temp * poly(dpi, 2) + (1|band_number),
                    data=ti.inoc, 
-                   ziformula = ~ temp * poly(dpi, 2) + sex,
+                   ziformula = ~ temp * poly(dpi, 2) + sex, #zero inflation: 
                    family = ziGamma(link = "log"))
 
-aictab(cand.set=list(l1_poly, l2_poly, l3_poly, l4_poly, l5_poly), 
-       modnames=c("l1_poly", "l2_poly", "l3_poly", "l4_poly", "l5_poly"))
+l6_poly <- glmmTMB(total_eye_score ~ sex * temp * poly(dpi, 2) + (1|band_number),
+                   data=ti.inoc, 
+                   ziformula = ~ temp * poly(dpi, 2) + sex, #zero inflation: 
+                   family = ziGamma(link = "log"))
 
-simulateResiduals(l5_poly, plot=T)
-summary(l5_poly)
-car::Anova(l5_poly, type="III")
+l7_poly <- glmmTMB(total_eye_score ~ sex + temp * poly(dpi, 2) + (1|band_number),
+                   data=ti.inoc, 
+                   ziformula = ~ temp + poly(dpi, 2) + sex, #zero inflation: 
+                   family = ziGamma(link = "log"))
+
+l8_poly <- glmmTMB(total_eye_score ~ sex * temp * poly(dpi, 2) + (1|band_number),
+                   data=ti.inoc, 
+                   ziformula = ~ temp + poly(dpi, 2) + sex, #zero inflation: 
+                   family = ziGamma(link = "log"))
+
+l9_poly <- glmmTMB(total_eye_score ~  temp * poly(dpi, 2) + (1|band_number),
+                    data=ti.inoc, 
+                    ziformula = ~ temp + poly(dpi, 2) + sex, #zero inflation: 
+                    family = ziGamma(link = "log"))
+
+l10_poly <- glmmTMB(total_eye_score ~  temp + poly(dpi, 2) + (1|band_number),
+                   data=ti.inoc, 
+                   ziformula = ~ temp + poly(dpi, 2) + sex, #zero inflation: 
+                   family = ziGamma(link = "log"))
+
+aictab(cand.set=list(l1_poly, l2_poly, l3_poly, l4_poly, l5_poly, l6_poly, l7_poly, l8_poly, l9_poly, l10_poly, l2), 
+       modnames=c("l1_poly", "l2_poly", "l3_poly", "l4_poly", "l5_poly", "l6_poly", "l7_poly", "l8_poly", "l9_poly", "l10_poly", "l2"))
+
+lp1 <- glmmTMB(total_eye_score ~ sex + temp * poly(dpi, 2) + (1|band_number),
+                   data=ti.inoc, 
+                   ziformula = ~ temp + poly(dpi, 2) + sex, #zero inflation: 
+                   family = ziGamma(link = "log"))
+
+lp2 <- glmmTMB(total_eye_score ~ sex + temp * poly(dpi, 2) + (1|band_number),
+               data=ti.inoc, 
+               ziformula = ~ temp + poly(dpi, 2), #zero inflation: 
+               family = ziGamma(link = "log"))
+
+lp3 <- glmmTMB(total_eye_score ~  temp * poly(dpi, 2) + (1|band_number),
+               data=ti.inoc, 
+               ziformula = ~ temp + poly(dpi, 2) , #zero inflation: 
+               family = ziGamma(link = "log"))
+lp4 <- glmmTMB(total_eye_score ~  temp * poly(dpi, 2) + (1|band_number),
+               data=ti.inoc, 
+               ziformula = ~ temp + poly(dpi, 2) + sex, #zero inflation: 
+               family = ziGamma(link = "log"))
+
+AIC(lp1, lp2, lp3, lp4) #keep sex
+
+simulateResiduals(l9_poly, plot=T)
+simulateResiduals(l7_poly, plot=T)
+
+summary(l9_poly)
+summary(l7_poly)
+car::Anova(l9_poly, type="III")
+car::Anova(l7_poly, type="III")
 
 emm_poly <- emmeans(
-  l5_poly,
+  l7_poly,
   ~ temp | dpi*sex,
   at = list(dpi = sort(unique(ti.inoc$dpi))),
-  component = "response",
+  component = "response", #averaging in zero component
+  #component = "cond", #only infected individuals
   type = "response"
 )
 
@@ -1954,40 +2080,170 @@ emm_poly_df <- as.data.frame(emm_poly)
 
 #For emmeans, we can look at conditional model (severity among birds that have pathology), or overall mean
 
+sex_colors <- c("#A76F98", "#578E3F")
+
+ggplot() +
+  # raw data
+  geom_jitter(
+    data = ti.inoc,
+    aes(x = dpi, y = total_eye_score, color = sex, shape=sex),
+    width = 0., height = 0.,
+    alpha = 0.75, size = 2
+  ) +
+  geom_line(data = ti.inoc,
+            aes(x=dpi, y=total_eye_score, color=sex, linetype = sex, groups=as.factor(band_number)),
+            alpha=0.5)+
+  # model means: component = response
+  geom_line(
+    data = emm_poly_df,
+    aes(x = dpi, y = emmean, color = sex, linetype = sex),
+    size = 0.9
+  ) +
+  # 95% CI around means: component = response
+  geom_ribbon(
+    data = emm_poly_df,
+    aes(x = dpi,
+        ymin = asymp.LCL, ymax = asymp.UCL, y = emmean,
+        fill = sex),
+    alpha = 0.25
+  ) +
+  # model means: component = cond
+  # geom_line(
+  #   data = emm_poly_df,
+  #   aes(x = dpi, y = response, color = sex, linetype = sex),
+  #   size = 0.9
+  # ) +
+  # # 95% CI around means: component = cond
+  # geom_ribbon(
+  #   data = emm_poly_df,
+  #   aes(x = dpi,
+  #       ymin = asymp.LCL, ymax = asymp.UCL, y = response,
+  #       fill = sex),
+  #   alpha = 0.25
+  #) +
+  labs(
+    x = "Days Post Inoculation",
+    y = "Ocular Pathology",
+    color = "Sex",
+    fill  = "Sex",
+    shape = "Sex",
+    linetype="Sex"
+  )+
+  scale_linetype_manual(values = c("dashed", "solid"))+
+   scale_color_manual(values = sex_colors)+
+   scale_fill_manual(values = sex_colors)+
+  facet_grid(~temp)
+
+emm_poly <- emmeans(
+  l9_poly,
+  ~ temp | dpi,
+  at = list(dpi = sort(unique(ti.inoc$dpi))),
+  #component = "response", #averaging in zero component
+  component = "cond", #only infected individuals
+  type = "response"
+)
+
+emm_poly_df <- as.data.frame(emm_poly)
+
+
+#color temp
+ggplot() +
+  # raw data
+  geom_jitter(
+    data = ti.inoc,
+    aes(x = dpi, y = total_eye_score, color = temp, shape = sex, group = sex),
+    position=position_jitterdodge(jitter.height=0.1, jitter.width=0.1, dodge.width = 1),
+    alpha = 0.75, size = 2
+  ) +
+  # geom_line(data = ti.inoc,
+  #           aes(x=dpi, y=total_eye_score, color=temp, groups=as.factor(band_number)),
+  #           alpha=0.1)+
+  # model means: component = response
+  geom_line(
+    data = emm_poly_df,
+    aes(x = dpi, y = response, color=temp),
+    size = 0.9
+  ) +
+  # 95% CI around means: component = response
+  geom_ribbon(
+    data = emm_poly_df,
+    aes(x = dpi,
+        ymin = asymp.LCL, ymax = asymp.UCL, y = response,
+        fill = temp),
+        linetype="dotted",
+        color="black",
+        size=0.25,
+    alpha = 0.15
+  ) +
+  labs(
+    x = "Days Post Inoculation",
+    y = "Ocular Pathology",
+    color = "Temperature",
+    fill  = "Temperature",
+    shape = "Sex",
+    linetype="Temperature"
+  )+
+  scale_shape_manual(
+    values = c(F = 16, M = 17),
+    labels = c(F = "Female", M = "Male")
+  )+
+  scale_color_manual(values = temp_colors)+
+  scale_fill_manual(values = temp_colors)#+
+  facet_wrap(~sex, labeller = labeller(sex = c('F'="Female", 'M' = "Male")))
+  
+
+#not polynomial - doesn't allow for changing shape 
+emm_df <- emmeans(
+  lm1,
+  ~ temp | dpi,
+  at = list(dpi = sort(unique(ti.inoc$dpi))),
+  #component = "response",
+  component = "cond", #
+  type = "response"
+)
+
+emm_df <- as.data.frame(emm_df)
+
 ggplot() +
   # raw data
   geom_jitter(
     data = ti.inoc,
     aes(x = dpi, y = total_eye_score, color = temp),
-    width = 0.3, height = 0.1,
-    alpha = 0.5, size = 2
+    width = 0., height = 0.,
+    alpha = 0.75, size = 2
   ) +
   # model means
   geom_line(
-    data = emm_poly_df,
-    aes(x = dpi, y = emmean, color = temp, group = temp),
+    data = emm_df,
+    aes(x = dpi, y = response, color = temp),
     size = 0.9
   ) +
+  geom_line(data = ti.inoc,
+            aes(x=dpi, y=total_eye_score, color=temp, groups=as.factor(band_number)),
+            alpha=0.5)+
   # 95% CI around means
   geom_ribbon(
-    data = emm_poly_df,
+    data = emm_df,
     aes(x = dpi,
-        ymin = asymp.LCL, ymax = asymp.UCL,
-        fill = temp, group = temp),
-    alpha = 0.2,
-    colour = NA
+        ymin = asymp.LCL, ymax = asymp.UCL, y = response,
+        fill = temp),
+    alpha = 0.25
   ) +
   labs(
-    x = "Days post inoculation",
-    y = "Ocular pathology (total eye score)",
+    x = "Days Post Inoculation",
+    y = "Ocular Pathology",
     color = "Temperature",
-    fill  = "Temperature"
+    fill  = "Temperature",
+    shape = "Temperature"
   )+
+  scale_linetype_manual(values = c("dashed", "solid"))+
   scale_color_manual(values = temp_colors)+
   scale_fill_manual(values = temp_colors)+
-  facet_wrap(~sex)
+  facet_wrap(~temp)
 
-#Max Eye Score
+#####Max Eye Score####
+
+
 ti.mod.m <- ti.mod %>%
   filter(dpi > 0)%>%
   group_by(band_number, temp, treatment) %>%
