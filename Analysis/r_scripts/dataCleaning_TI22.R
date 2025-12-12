@@ -95,6 +95,15 @@ ti <- ti %>%
          ever_sick = ifelse(any(coalesce(sick, 0) == 1), 1,0))%>%
   ungroup()
 
+ti <- ti %>%
+  mutate(sex = dplyr::recode(sex,
+                      "F" = "Female",
+                      "M" = "Male"))
+
+ti <- ti %>%
+  mutate(temp = fct_relevel(temp,
+                            "Warm", "Cold"))
+
 #identify seropositive birds from quarantine in dataset
 Qinf <- ti %>%
   dplyr::filter(band_number %in% c(2667, 2750)) %>%
@@ -106,7 +115,3 @@ Qinf
 #remove birds that were seropositive dpi -28 from antibody analysis
 ti.ab <- ti %>%
   filter(band_number != 2667 & band_number != 2750)
-
-
-
-

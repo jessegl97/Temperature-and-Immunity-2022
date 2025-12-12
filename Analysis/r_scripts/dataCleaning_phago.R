@@ -1,6 +1,6 @@
-ti <- read.csv("ti_merged_data.csv")
+ti <- read.csv("data_frames/TI22_merged_data.csv")
 
-ti$quant_cutoff = 100
+ti$quant_cutoff = 50
 ti$seropos_cutoff = 0.061
 ti$sympt_cutoff = 0.1
 
@@ -14,7 +14,9 @@ ti <- ti %>%
 ti <- ti %>%
   mutate(diseased= ifelse(total_eye_score>=sympt_cutoff, 1, 0),
          sick = ifelse(total_eye_score>=sympt_cutoff | quantity >= quant_cutoff, 1, 0),
-         infected = ifelse(quantity >= quant_cutoff, 1, 0))
+         infected = ifelse(quantity >= quant_cutoff, 1, 0),
+         inf_9 = ifelse(dpi == 9 & quantity >= quant_cutoff, 1, 0),
+         dis_9 =  ifelse(dpi == 9 & total_eye_score>=sympt_cutoff, 1, 0))
 
 #new column with whether the bird is ever diseased
 ti <- ti %>%
@@ -34,3 +36,8 @@ ti.p <- ti %>%
 ti.p <- ti.p%>%
   filter(dpi != 2) %>% #remove dpi 2 because only a small subset were run day 2
   drop_na(phago_score)
+
+ti.p <- ti.p %>%
+  mutate(sex = dplyr::recode(sex,
+                             "F" = "Female",
+                             "M" = "Male"))
