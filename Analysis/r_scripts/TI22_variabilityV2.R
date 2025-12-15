@@ -953,3 +953,136 @@ ggplot(ti.f, aes(x= groups, y=fever_score, color= groups))+
   theme(axis.text.x = element_text(angle=45, hjust=1))+
   labs(x="Treatment Groups", y="Fever Score (All Days Combined B-H Test)", color="Treatment Groups")
 
+
+
+####Mass####
+source("r_scripts/dataCleaning_TI22.R")
+ti %>%
+  dplyr::select(dpi, treatment, temp, groups)%>%
+  tbl_summary(
+    by="dpi"
+  )%>%
+  modify_header(
+    label ~ "**All Birds**"
+  )
+
+ti.m <- ti %>%
+  filter(dpi %in% c(-12, 3, 14, 21, 28, 35),
+         !is.na(mass))
+
+#Antibody analysis sample sizes; see dataCleaning_antibody.R for removal breakdown
+ti.m %>%
+  dplyr::select(dpi, treatment, temp, groups)%>%
+  tbl_summary(
+    by="dpi"
+  )%>%
+  modify_header(
+    label ~ "**Birds for Mass**"
+  )
+
+ti.m <- ti.m %>% 
+  mutate(groups = factor(groups,
+                         levels = c("Warm Control", "Warm Inoculated",
+                                    "Cold Control", "Cold Inoculated")))
+
+unique(ti.m$dpi)
+ti.m$dpi <- as.factor(ti.m$dpi)
+
+#Set reference categories "Warm" and "Sham"
+ti.m$temp <- relevel(as.factor(ti.m$temp), ref = "Warm")
+ti.m$treatment <- relevel(as.factor(ti.m$treatment), ref = "Control")
+ti.m$dpi.f <- as.factor(ti.m$dpi)
+
+# Variability analysis for mass
+mass_var <- ti.m %>%
+  group_by(dpi, groups, ever_diseased) %>%
+  dplyr::reframe(
+    temp = temp,
+    band_number = band_number,
+    mass = mass,
+    treatment = treatment,
+    groups = groups,
+    ever_diseased = ever_diseased,
+    
+    # Calculations for mass
+    mean_mass = mean(mass, na.rm = TRUE),
+    median_mass = median(mass, na.rm = TRUE),
+    bird_cv_mass = calculate_cv(mass),
+    bird_pv_mass = calculate_pv(mass),
+    bird_v2_mass = calculate_v2(mass),
+    
+    # Bootstrapping for mass
+    cv_bootstrap_mass = list(replicate(n_boot, calculate_cv(sample(mass, replace = TRUE)))),
+    pv_bootstrap_mass = list(replicate(n_boot, calculate_pv(sample(mass, replace = TRUE)))),
+    v2_bootstrap_mass = list(replicate(n_boot, calculate_v2(sample(mass, replace = TRUE))))
+  ) %>%
+  mutate(
+    # Confidence intervals for mass
+    cv_lower_ci_mass = map_dbl(cv_bootstrap_mass, ~ quantile(.x, 0.025, na.rm = TRUE)),
+    cv_upper_ci_mass = map_dbl(cv_bootstrap_mass, ~ quantile(.x, 0.975, na.rm = TRUE)),
+    pv_lower_ci_mass = map_dbl(pv_bootstrap_mass, ~ quantile(.x, 0.025, na.rm = TRUE)),
+    pv_upper_ci_mass = map_dbl(pv_bootstrap_mass, ~ quantile(.x, 0.975, na.rm = TRUE)),
+    v2_lower_ci_mass = map_dbl(v2_bootstrap_mass, ~ quantile(.x, 0.025, na.rm = TRUE)),
+    v2_upper_ci_mass = map_dbl(v2_bootstrap_mass, ~ quantile(.x, 0.975, na.rm = TRUE))
+  ) %>%
+  dplyr::select(-cv_bootstrap_mass, -pv_bootstrap_mass, -v2_bootstrap_mass) %>%
+  ungroup()
+
+# Summary statistics for mass
+summary_mass_tibble <- mass_var %>%
+  group_by(dpi, groups, temp, ever_diseased) %>%
+  dplyr::reframe(
+    mean_mass = mean(mean_mass, na.rm = TRUE),
+    median_mass = mean(median_mass, na.rm = TRUE),
+    mean_bird_cv_mass = mean(bird_cv_mass, na.rm = TRUE),
+    mean_bird_pv_mass = mean(bird_pv_mass, na.rm = TRUE),
+    mean_bird_v2_mass = mean(bird_v2_mass, na.rm = TRUE),
+    mean_cv_lower_ci_mass = mean(cv_lower_ci_mass, na.rm = TRUE),
+    mean_cv_upper_ci_mass = mean(cv_upper_ci_mass, na.rm = TRUE),
+    mean_pv_lower_ci_mass = mean(pv_lower_ci_mass, na.rm = TRUE),
+    mean_pv_upper_ci_mass = mean(pv_upper_ci_mass, na.rm = TRUE),
+    mean_v2_lower_ci_mass = mean(v2_lower_ci_mass, na.rm = TRUE),
+    mean_v2_upper_ci_mass = mean(v2_upper_ci_mass, na.rm = TRUE),
+    n_individuals = n_distinct(band_number) #calculate number of individuals in each group
+  )
+
+dodge <- position_dodge(width=0.75)
+
+var.mass <- ggplot(summary_mass_tibble, aes(x = dpi, color = groups)) +
+  geom_errorbar(aes(x = dpi, y = mean_bird_pv_mass, ymin = mean_pv_lower_ci_mass, ymax = mean_pv_upper_ci_mass, group = groups),
+                width = 0, color="black", position=dodge) +
+  geom_point(aes(y = mean_bird_pv_mass, shape = "PV", group = groups),
+             size = 3, shape=1, color="black", stroke=1.5, position=dodge) +
+  geom_point(aes(y = mean_bird_pv_mass, shape = "PV", group = groups),
+             size = 3, shape=16, position=dodge) +
+  geom_line(aes(x = dpi, y = mean_bird_pv_mass, group = groups),
+            position=dodge)+
+  
+  #geom_point(aes(y = mean_bird_cv_mass, shape = "CV", group=dpi), size = 2, position = dodge) +
+  
+  labs(
+    y = "Variability (PV)",
+    x = "Days Post Inoculation",
+    shape = "Metric Type",
+    color = "Treatment Group"
+    #title = "Variability in Mass"
+  ) +
+  scale_color_manual(values = c(treat_colors))+
+  facet_grid(~temp~ever_diseased)+
+  theme(
+    strip.text = element_text(size=12)
+  )
+var.mass
+
+
+bf_mass_treat <- leveneTest(mass ~ treatment, data = ti.m, center = median)
+bf_mass_temp <- leveneTest(mass ~ temp, data = ti.m, center = median)
+bf_mass_groups <- leveneTest(mass ~ groups, data = ti.m, center = median)
+bf_mass_dis <- leveneTest(mass ~ as.factor(ever_diseased), data = ti.m, center = median)
+
+bf_mass_dis_cold <- leveneTest(mass ~ as.factor(ever_diseased), data = ti.m %>% filter(temp == "Cold"), center = median)
+bf_mass_dis_warm <- leveneTest(mass ~ as.factor(ever_diseased), data = ti.m %>% filter(temp == "Warm"), center = median)
+
+bf_mass_treat_cold <- leveneTest(mass ~ treatment, data = ti.m %>% filter(temp == "Cold" & dpi == 21), center = median)
+bf_mass_treat_warm <- leveneTest(mass ~ treatment, data = ti.m %>% filter(temp == "Warm" & dpi == 21), center = median)
+
