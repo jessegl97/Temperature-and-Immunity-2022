@@ -74,10 +74,10 @@ ti %>%
     label ~ "**All Birds**"
   )
 
-unique(ti.ab$band_number)
+unique(ti.rm$band_number)
 
 #Antibody analysis sample sizes; see dataCleaning_antibody.R for removal breakdown
-ti.ab %>%
+ti.rm %>%
   dplyr::select(dpi, treatment, temp, groups)%>%
   tbl_summary(
     by="dpi"
@@ -85,6 +85,8 @@ ti.ab %>%
   modify_header(
     label ~ "**Birds for Antibodies**"
   )
+
+ti.ab <- ti.rm
 
 ti.ab <- ti.ab %>% 
   mutate(groups = factor(groups,
@@ -101,9 +103,10 @@ ti.ab$dpi.f <- as.factor(ti.ab$dpi)
 
 # Variability analysis for elisa_od
 elisa_var <- ti.ab %>%
-  group_by(dpi, groups) %>%
+  group_by(dpi, groups, sex) %>%
   dplyr::reframe(
     temp = temp,
+    sex = sex,
     band_number = band_number,
     elisa_od = elisa_od,
     treatment = treatment,
@@ -135,7 +138,7 @@ elisa_var <- ti.ab %>%
 
 # Summary statistics for elisa_od
 summary_elisa_tibble <- elisa_var %>%
-  group_by(dpi, groups) %>%
+  group_by(dpi, groups, sex, temp) %>%
   dplyr::reframe(
     mean_elisa = mean(mean_elisa, na.rm = TRUE),
     median_elisa = mean(median_elisa, na.rm = TRUE),
@@ -153,7 +156,7 @@ summary_elisa_tibble <- elisa_var %>%
 
 dodge <- position_dodge(width=0.75)
 
-var.ab <- ggplot(summary_elisa_tibble, aes(x = groups, color = groups)) +
+var.ab <- ggplot(summary_elisa_tibble, aes(x = temp, color = groups)) +
   geom_errorbar(aes(y = mean_bird_pv_elisa, ymin = mean_pv_lower_ci_elisa, ymax = mean_pv_upper_ci_elisa, group = dpi), width = 0, color="black", position=dodge) +
   geom_point(aes(y = mean_bird_pv_elisa, shape = "PV", group = dpi), size = 3, shape=1, color="black", stroke=1.5, position=dodge) +
   geom_point(aes(y = mean_bird_pv_elisa, shape = "PV", group = dpi, alpha=dpi), size = 3, shape=16, position=dodge) +
@@ -172,12 +175,14 @@ var.ab <- ggplot(summary_elisa_tibble, aes(x = groups, color = groups)) +
   scale_alpha_manual(values = c(0.5, 0.75, 1))+
   theme(
     axis.text.x = element_text(angle = 45, hjust=1)
-  )
+  )+
+  facet_wrap(~sex)
 
 var.ab
 
+sex_colors <- c("#A76F98", "#578E3F")
 
-ggplot(summary_elisa_tibble, aes(x = groups, color = groups, shape=dpi)) +
+ggplot(summary_elisa_tibble, aes(x = sex, color = sex, shape=dpi)) +
   geom_errorbar(aes(y = mean_bird_pv_elisa, ymin = mean_pv_lower_ci_elisa, ymax = mean_pv_upper_ci_elisa, group = dpi), width = 0, color="black", position=dodge) +
   geom_point(aes(y = mean_bird_pv_elisa, group = dpi), size = 4, color="black", stroke=1, position=dodge) +
   geom_point(aes(y = mean_bird_pv_elisa, group = dpi), size = 3, position=dodge) +
@@ -187,29 +192,31 @@ ggplot(summary_elisa_tibble, aes(x = groups, color = groups, shape=dpi)) +
   
   labs(
     y = "Variability (PV)",
-    x = "Temperature",
+    x = "Treatment Group",
     shape = "Metric Type",
     color = "Temperature",
     #title = "Variability in Antibody Levels"
   ) +
-  scale_color_manual(values = c(treat_colors))+
+  scale_color_manual(values = c(sex_colors))+
   scale_shape_manual(values = c(1, 17, 16))+
-  theme(
-    axis.text.x = element_text(angle = 45, hjust=1)
-  )
+  # theme(
+  #   axis.text.x = element_text(angle = 45, hjust=1)
+  # )+
+  facet_wrap(~temp)
 
-mean.ab <- ggplot(ti.ab, aes(x = groups, y=elisa_od, color = groups)) +
+
+mean.ab <- ggplot(ti.ab, aes(x = sex, y=elisa_od, color = groups)) +
   geom_boxplot(width=0.5, outlier.shape=3)+
   geom_jitter(size = 2, width=0.25, alpha=0.5) +
 
   labs(
     y = "ELISA OD",
-    x = "Treatment Group",
+    x = "Sex",
     color = "Treatment Group",
     #title = "Mean Antibody Levels"
   ) +
   scale_color_manual(values = c(treat_colors))+
-  facet_wrap(~dpi)+
+  facet_wrap(~sex)+
   theme_bw()+
   theme(
     axis.text.x = element_text(angle = 45, hjust=1)
@@ -248,7 +255,7 @@ df_treat$dpi <- df_temp$dpi <- df_groups$dpi <- "28"
 # )
 
 ####Phagocytosis####
-source("dataCleaning_phago.R")
+source("r_scripts/dataCleaning_phago.R")
 lvl <- c("Warm Control", "Warm Inoculated", "Cold Control", "Cold Inoculated")
 
 ti.p %>%

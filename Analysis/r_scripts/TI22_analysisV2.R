@@ -2070,13 +2070,13 @@ dodge <- position_dodge(width = .5)
 
 #Model predictions by temp
 ggplot() +
-  geom_point(data = ti.m.g %>% filter(dpi != -28),
+  geom_point(data = ti.m.g,
               aes(x = dpi.f, y = mass, color = groups),
               position =dodge,
               alpha = 0.25, size = 2) +
-  # geom_line(data=ti.m.g,
-  #           aes(x=dpi.f, y=mass, color=groups, group = as.factor(band_number)),
-  #           position = dodge, alpha=0.1)+
+  geom_line(data=ti.m.g,
+            aes(x=dpi.f, y=mass, color=groups, group = as.factor(band_number)),
+            position = dodge, alpha=0.5)+
   
   geom_errorbar(data = emm_df,
                 aes(x = dpi.f, ymin = lower.CL, ymax = upper.CL, groups = treatment),
@@ -2250,7 +2250,10 @@ ti %>%
     label ~ "**All Birds**"
   )
 
+ti.ab <- ti.rm
+
 unique(ti.ab$band_number)
+ti.ab$band_number <- as.factor(ti.ab$band_number)
 
 #Antibody analysis sample sizes; see dataCleaning_antibody.R for removal breakdown
 ti.ab %>%
@@ -2304,42 +2307,54 @@ d <- glmmTMB(elisa_od ~ treatment * dpi.f + temp + (1|band_number),
              data=ti.ab,
              family=Gamma(link="log"))
 
+d1 <- glmmTMB(elisa_od ~ treatment * dpi.f + (1|band_number),
+             data=ti.ab,
+             family=Gamma(link="log"))
 #temp * dpi
 e <- glmmTMB(elisa_od ~ temp * dpi.f + treatment + (1|band_number),
              data=ti.ab,
              family=Gamma(link="log"))
 
-e.5 <- glmmTMB(elisa_od ~ temp * dpi.f + (1|band_number),
+f <- glmmTMB(elisa_od ~ temp * dpi.f + (1|band_number),
                data=ti.ab,
                family=Gamma(link="log"))
 
-f <- glmmTMB(elisa_od~treatment+temp+dpi.f + treatment:dpi.f + (1|band_number),
-             data=ti.ab, 
-             family=Gamma(link = "log"))
-
-fs <- glmmTMB(elisa_od~treatment+temp+dpi.f + treatment:dpi.f + sex + (1|band_number),
-              data=ti.ab, 
-              family=Gamma(link = "log"))
-
-#Null
-g <- glmmTMB(elisa_od ~ 1 + (1|band_number),
+g <- glmmTMB(elisa_od ~ treatment * dpi.f + sex + temp + (1|band_number),
              data=ti.ab,
              family=Gamma(link="log"))
 
-aictab(cand.set=list(a, b, c,  d, e, e.5, f, fs, g), 
-       modnames=c("a",  "b", "c", "d",  "e", "e.5", "f", "fs", "g"))
+#Null
+h <- glmmTMB(elisa_od ~ 1 + (1|band_number),
+             data=ti.ab,
+             family=Gamma(link="log"))
 
-BIC(f, d)
+aictab(cand.set=list(a, b, c,  d, d1, e, f, g, h), 
+       modnames=c("a",  "b", "c", "d", "d1", "e", "f", "g", "h"))
+
+BIC(d, g)
 summary(d)
-summary(f)
+summary(g)
 
 #Final Model: Are antibodies predicted by treatment, temp, dpi, or the interaction between temp and dpi while controlling for individual band number
 lm1<-glmmTMB(elisa_od~treatment * dpi.f + temp + (1|band_number),
              data=ti.ab, 
-             family=Gamma(link = "log"))
+             family=Gamma(link="log"))
 
-simulateResiduals(lm1, plot=T)
-summary(lm1)
+simulateResiduals(lm1ei, plot=T)
+hist(resid(lm1))
+summary(lm1ei)
+
+lm1ed<-glmmTMB(elisa_od~ever_diseased * dpi.f + temp + (1|band_number),
+             data=ti.ab %>% filter(treatment == "Inoculated"), 
+             family=Gamma(link="log"))
+
+lm1ei<-glmmTMB(elisa_od~ever_infected * dpi.f + temp + (1|band_number),
+               data=ti.ab%>% filter(treatment == "Inoculated"), 
+               family=Gamma(link="log"))
+
+aictab(cand.set=list(lm1, lm1ed, lm1ei), 
+       modnames=c("lm1", "lm1ed", "lm1ei"))
+
 
 lm1s<-glmmTMB(elisa_od~treatment * dpi.f + temp + sex + (1|band_number),
               data=ti.ab, 
@@ -2391,7 +2406,8 @@ ggplot(emm_df, aes(x = groups, y = response, color = groups, shape=dpi.f)) +
   theme(
     strip.text = element_text(size = 12, face = "bold"),
     axis.text.x = element_text(angle = 45, hjust = 1)
-  )
+  )+
+  facet_wrap(~sex)
 
 ggplot(emm_df, aes(x = dpi, y = response, color = groups, groups=groups)) +
   geom_jitter(
@@ -2584,6 +2600,23 @@ summary(glm4)
 
 plot(allEffects(glm4))
 
+glm4s <- glmmTMB(phago_score~temp+treatment + sex + (1|band_number), 
+                weights=wbc_total+phago_total, 
+                data=ti.p, family="binomial")
+
+glm4ed <- glmmTMB(phago_score~temp+ever_diseased + (1|band_number), 
+                 weights=wbc_total+phago_total, 
+                 data=ti.p, family="binomial")
+
+glm4ei <- glmmTMB(phago_score~temp+ever_infected + (1|band_number), 
+                  weights=wbc_total+phago_total, 
+                  data=ti.p, family="binomial")
+
+AIC(glm4, glm4s, glm4ed, glm4ei)
+
+summary(glm4ei)
+summary(glm4)
+
 #Anova type II asks whether there is a main effect overall, averaged across the other variables
 glm4_anova_II <- car::Anova(glm4, type = "II")
 
@@ -2591,7 +2624,7 @@ glm4_anova_III <- car::Anova(glm4, type = "III")
 
 
 #emmeans
-emm <- emmeans(glm4, ~ temp * treatment, type = "response", re.form = NA)
+emm <- emmeans(glm4ei, ~ temp * ever_infected, type = "response", re.form = NA)
 emm_df <- as.data.frame(emm)  
 
 emm_df <- emm_df %>%
@@ -2638,10 +2671,10 @@ glm4.i <- glmmTMB(phago_score~temp+ inf_9 + (1|band_number),
 AIC(glm4, glm4.d, glm4.i)
 
 simulateResiduals(glm4.i, plot=T)
-summary(glm4.i)
+summary(glm4.d)
 car::Anova(glm4.d, type="III")
 
-emm <- emmeans(glm4.i, ~ temp * inf_9, type = "response", re.form = NA)
+emm <- emmeans(glm4ei, ~ temp * ever_infected, type = "response", re.form = NA)
 emm_df <- as.data.frame(emm)  
 
 i<- ggplot(emm_df, aes(x = temp, y = prob, color=temp))+
@@ -2655,9 +2688,9 @@ i<- ggplot(emm_df, aes(x = temp, y = prob, color=temp))+
   theme(
     axis.text.x = element_text(size=13, angle=45, hjust=1)
   )+
-  facet_wrap(~inf_9, labeller = labeller(inf_9 = c('0'="Uninfected", '1' = "Infected")))
+  facet_wrap(~ever_infected, labeller = labeller(inf_9 = c('0'="Uninfected", '1' = "Infected")))
 
-emm <- emmeans(glm4.d, ~ temp * dis_9, type = "response", re.form = NA)
+emm <- emmeans(glm4ed, ~ temp * ever_diseased, type = "response", re.form = NA)
 emm_df <- as.data.frame(emm)  
 
 d<- ggplot(emm_df, aes(x = temp, y = prob, color=temp))+
@@ -2671,7 +2704,7 @@ d<- ggplot(emm_df, aes(x = temp, y = prob, color=temp))+
     axis.text.x = element_text(size=13, angle=45, hjust=1)
   )+
   labs(title = "Diseased DPI 9")+
-  facet_wrap(~dis_9, labeller = labeller(dis_9 = c('0'="No Pathology", '1' = "Pathology")))
+  facet_wrap(~ever_diseased, labeller = labeller(dis_9 = c('0'="No Pathology", '1' = "Pathology")))
 
 
 emm <- emmeans(glm4, ~ temp * treatment, type = "response", re.form = NA)
@@ -2693,6 +2726,7 @@ t <-ggplot(emm_df, aes(x = temp, y = prob, color=temp))+
 i + theme(legend.position = "none")+
 d + theme(legend.position = "none")+
 t
+
 # tidy or convert results
 glm4_coef_fixed   <- broom.mixed::tidy(glm4, effects = "fixed", conf.int = TRUE)
 glm4_coef_random  <- broom.mixed::tidy(glm4, effects = "ran_pars", conf.int = TRUE)

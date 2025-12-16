@@ -1,4 +1,4 @@
-ti <- read.csv("ti_merged_data.csv")
+ti <- read.csv("data_frames/TI22_merged_data.csv")
 
 ti %>%
   dplyr::select(dpi, treatment, temp, groups)%>%
@@ -10,13 +10,18 @@ ti %>%
   )
 
 #combine dpi 9 and 10
+ti <- ti %>% 
+  mutate(sex = dplyr::recode(sex,
+                             "F" = "Female",
+                             "M" = "Male"))
+
 ti$dpi <- ifelse(ti$dpi %in% c(9, 10), "9", as.integer(ti$dpi))
 ti$dpi <- as.integer(ti$dpi)
 unique(ti$dpi)
 ti$quant
 #add infected and seropositivity thresholds
 ti.cont <- ti%>%
-  filter(treatment == "Sham")%>%
+  filter(treatment == "Control")%>%
   drop_na(quantity)
 
 ti.cont
@@ -84,8 +89,13 @@ ggplot(ab.miss, aes(x=dpi, y=total_eye_score))+
 ti.rm <- ti %>%
   filter(!band_number %in% c(unique(ab.miss$band_number)))
 
+ti.rm %>%
+  dplyr::select(dpi, treatment, temp, groups)%>%
+  tbl_summary(
+    by="dpi"
+  )%>%
+  modify_header(
+    label ~ "**Antibody Birds**"
+  )
+
 unique(ti.rm$band_number)
-#Across all days post-infection (dpi 9 and 28)
-ti.pi <- ti #%>%
-  #filter(dpi > 0)
-unique(ti.pi$dpi)
