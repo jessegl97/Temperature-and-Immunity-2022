@@ -70,7 +70,7 @@ ti.cont <- ti%>%
 
 ti.cont
 range(ti.cont$quantity) #highest control quantity = 95.38
-ti$quant_cutoff = 50
+ti$quant_cutoff =50
 ti.cont$elisa_od
 ti$seropos_cutoff = 0.061
 ti$sympt_cutoff = 0.1

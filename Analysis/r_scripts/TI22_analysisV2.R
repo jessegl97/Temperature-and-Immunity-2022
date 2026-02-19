@@ -258,6 +258,10 @@ dis.i <- glm(ever_diseased ~ temp * sex, data=ti.inoc %>% filter(ever_infected =
 simulateResiduals(dis.i, plot=T)
 summary(dis.i)
 
+null <- glm(ever_diseased ~ 1, data=ti.inoc, family=binomial())
+
+aictab(cand.set=list(dis, null), 
+       modnames=c("dis", "null"))
 
 #####Eye Score####
 source("r_scripts/dataCleaning_TI22.R")
@@ -402,8 +406,13 @@ l8 <- glmmTMB(total_eye_score ~ dpi.f + (1|band_number),
               ziformula = ~ sex,
               family = ziGamma(link = "log"))
 
-aictab(cand.set=list(l1, l2, l3, l4, l5, l6, l7, l8), 
-       modnames=c("l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8"))
+null <- glmmTMB(total_eye_score ~ 1 + (1|band_number),
+                data=ti.inoc.mod, 
+                ziformula = ~ 1,
+                family = ziGamma(link = "log"))
+
+aictab(cand.set=list(l1, l2, l3, l4, l5, l6, l7, l8, null), 
+       modnames=c("l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "null"))
 
 simulateResiduals(l5, plot=T)
 summary(l5)
@@ -540,17 +549,16 @@ emm_zi_df <- as.data.frame(emm_zi)
 # sex, temp, prob, SE, asymp.LCL, asymp.UCL, etc.
 
 g.zi<- ggplot(emm_zi_df,
-       aes(x = temp, y = response, color = sex, group = sex, shape = sex)) +
+       aes(x = temp, y = (1-response), color = sex, group = sex, shape = sex)) +
   geom_point(size = 3) +
-  geom_line() +
-  geom_errorbar(aes(ymin = asymp.LCL, ymax = asymp.UCL),
-                width = 0.03) +
+  geom_errorbar(aes(ymin = (1-asymp.LCL), ymax = (1-asymp.UCL)),
+                width = 0.05) +
   labs(
     x = "Temperature",
-    y = "Probability of No Pathology [Pr(structural zero)]",
+    y = "Probability of Pathology\n (1 - Pr[Structural Zero])",
     color = "Sex",
     shape = "Sex",
-    title = "Zero-inflation Probability"
+    title = "Zero-inflation Component"
   ) +
   scale_color_manual(values= sex_colors)+
   scale_shape_manual(values = sex_shapes)
@@ -674,8 +682,13 @@ q9 <- glmmTMB(log10_quantity1 ~ dpi.f * sex + (1|band_number),
               ziformula = ~ sex * temp,
               family = ziGamma(link = "log"))
 
-aictab(cand.set=list(q1, q2, q3, q4, q5, q6, q7, q8, q9), 
-       modnames=c("1", "2", "3", "4", "5", "6", "7", "8", "9"))
+null <- glmmTMB(log10_quantity1 ~ 1 + (1|band_number),
+                data=dat.q.mod, 
+                ziformula = ~ 1,
+                family = ziGamma(link = "log"))
+
+aictab(cand.set=list(q1, q2, q3, q4, q5, q6, q7, q8, q9, null), 
+       modnames=c("1", "2", "3", "4", "5", "6", "7", "8", "9", "null"))
 
 BIC(q5, q6)
 
@@ -721,7 +734,7 @@ full_grid <- expand_grid(
 emm_df_full <- full_grid %>%
   left_join(emm_df, by = c("temp", "dpi.f"))
 
-dodge = position_dodge(width = 0.2)
+dodge = position_dodge(width = -0.2)
 
 g.pl <- ggplot(dat.q, aes(x = dpi.f, y = log10_quantity1), color = temp) +
    #Jittered
@@ -757,7 +770,7 @@ g.pl <- ggplot(dat.q, aes(x = dpi.f, y = log10_quantity1), color = temp) +
   ) +
   geom_point(
     data = emm_df_full,
-    aes(x = dpi.f, y = emmean, group = temp),
+    aes(x = dpi.f, y = emmean, color = temp, group = temp),
     size = 3.2,
     color="black",
     shape=1,
@@ -794,21 +807,17 @@ emm_zi <- emmeans(
 
 emm_zi_df <- as.data.frame(emm_zi)
 
-# emm_zi_df will have columns like:
-# sex, temp, prob, SE, asymp.LCL, asymp.UCL, etc.
-
 g.zi.pl<- ggplot(emm_zi_df,
-              aes(x = temp, y = response, color = sex, group = sex, shape = sex)) +
+              aes(x = temp, y = (1-response), color = sex, group = sex, shape = sex)) +
   geom_point(size = 3) +
-  geom_line() +
-  geom_errorbar(aes(ymin = asymp.LCL, ymax = asymp.UCL),
-                width = 0.03) +
+  geom_errorbar(aes(ymin = (1-asymp.LCL), ymax = (1-asymp.UCL)),
+                width = 0.05) +
   labs(
     x = "Temperature",
-    y = "Probability of No Pathogen Load [Pr(structural zero)]",
+    y = "Probability of Pathogen Load\n (1 - Pr[Structural Zero])",
     color = "Sex",
     shape = "Sex",
-    title = "Zero-inflation Probability"
+    title = "Zero-inflation Component"
   ) +
   scale_color_manual(values= sex_colors)+
   scale_shape_manual(values = sex_shapes)
@@ -1100,6 +1109,7 @@ simulateResiduals(glm_fever.cont.sf, plot=T)
 summary(glm_fever.cont.sf)
 plot(allEffects(glm_fever.cont.sf))
 
+
 glm_fever.cont <- glmmTMB(fever_score ~ temp + sex + dpi.f + (1|band_number), 
                           data=ti.f %>% filter(treatment == "Control"))
 
@@ -1313,7 +1323,7 @@ aictab(list(m1id, m2id, m3id, m4id, m5id, m6id, m7id, m8id, m_nulli),
        modnames = c("m1","m2","m3","m4", "m5", "m6", "m7", "m8", "null"))
 
 simulateResiduals(m4id, plot=T)
-summary(m4id)
+summary(mid)
 car::Anova(m4id, type="III")
 summary(m7id)
 car::Anova(m7id, type ="III")
